@@ -25,11 +25,11 @@ let test_with_lock_m () =
   let mutex = Mutex.create () in
   let switch _ =
     Utils.with_lock_m mutex
-      ( if !x = false then (
-          x := true;
-          counter1 := !counter1 + 1 )
-        else counter2 := !counter2 + 1;
-        SessionM.return () )
+      (if !x = false then (
+         x := true;
+         counter1 := !counter1 + 1)
+       else counter2 := !counter2 + 1;
+       SessionM.return ())
   in
   let tq = Queue.create () in
   for _ = 1 to 10 do
@@ -51,7 +51,7 @@ let test_read_block () =
   let fill_array offset arr =
     if offset = 0L then (
       Bigarray.Array1.fill arr 'a';
-      arr.{stream_block_size} <- 'c' )
+      arr.{stream_block_size} <- 'c')
     else Bigarray.Array1.fill arr 'b';
     SessionM.return ()
   in
@@ -80,7 +80,7 @@ let test_read_block () =
       if i = 2 then Bigarray.Array1.fill arr 'b'
       else (
         Bigarray.Array1.fill arr 'a';
-        if i = 1 then arr.{0} <- 'c' );
+        if i = 1 then arr.{0} <- 'c');
       arr
     in
     assert_equal ~printer:print_array result dest_arrs.(i)

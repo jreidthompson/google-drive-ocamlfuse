@@ -320,10 +320,10 @@ let build_resource_tables parent_path trashed =
       in
       let filename = Filename.basename resource.CacheData.Resource.path in
       (if clean_name <> filename then
-       let name_counter =
-         try Hashtbl.find filename_table clean_name with Not_found -> 0
-       in
-       Hashtbl.replace filename_table clean_name name_counter);
+         let name_counter =
+           try Hashtbl.find filename_table clean_name with Not_found -> 0
+         in
+         Hashtbl.replace filename_table clean_name name_counter);
       Hashtbl.add filename_table filename 0;
       Hashtbl.add remote_id_table
         (Option.get resource.CacheData.Resource.remote_id)
@@ -552,18 +552,19 @@ let lookup_resource path trashed =
   let cache = Context.get_cache () in
   let resource = Cache.Resource.select_resource_with_path cache path trashed in
   (if Option.is_none resource then
-   Utils.log_with_header
-     "END: Loading resource %s (trashed=%b) from db: Not found\n%!" path trashed
-  else
-    let id = resource |. GapiLens.option_get |. CacheData.Resource.id in
-    let state =
-      resource |. GapiLens.option_get |. CacheData.Resource.state
-      |> CacheData.Resource.State.to_string
-    in
-    Utils.log_with_header
-      "END: Loading resource %s (trashed=%b) from db: Found (id=%Ld, state=%s)\n\
-       %!"
-      path trashed id state);
+     Utils.log_with_header
+       "END: Loading resource %s (trashed=%b) from db: Not found\n%!" path
+       trashed
+   else
+     let id = resource |. GapiLens.option_get |. CacheData.Resource.id in
+     let state =
+       resource |. GapiLens.option_get |. CacheData.Resource.state
+       |> CacheData.Resource.State.to_string
+     in
+     Utils.log_with_header
+       "END: Loading resource %s (trashed=%b) from db: Found (id=%Ld, state=%s)\n\
+        %!"
+       path trashed id state);
   resource
 
 let update_cache_size delta metadata cache =
@@ -698,7 +699,7 @@ let get_file_from_server parent_folder_id name trashed =
   let config = Context.get_ctx () |. Context.config_lens in
   Utils.log_with_header "BEGIN: Getting resource %s (%s) from server\n%!" name
     (if parent_folder_id = "" then "shared with me"
-    else "in folder" ^ parent_folder_id);
+     else "in folder" ^ parent_folder_id);
   let q =
     if parent_folder_id <> "" then
       Printf.sprintf "name='%s' and '%s' in parents and trashed=%b"
@@ -726,32 +727,32 @@ let get_file_from_server parent_folder_id name trashed =
 let get_root_folder_id_from_server config =
   Utils.log_with_header "BEGIN: Getting root resource from server\n%!";
   (if config.Config.scope = device_scope then
-   get_file_from_server default_root_folder_id device_root_folder false
-   >>= fun root_option ->
-   match root_option with
-   | None ->
-       let file =
-         {
-           File.empty with
-           File.name = device_root_folder;
-           mimeType = "application/vnd.google-apps.folder";
-         }
-       in
-       Utils.log_with_header "BEGIN: Creating root (%s) on server\n%!"
-         device_root_folder;
-       with_retry_default
-         (FilesResource.create ~enforceSingleParent:true ~supportsAllDrives:true
-            ~std_params:file_std_params file)
-       >>= fun created_file ->
-       Utils.log_with_header "END: Creating root (id=%s) on server\n%!"
-         created_file.File.id;
-       SessionM.return created_file
-   | Some root -> SessionM.return root
-  else
-    with_retry_default
-      (FilesResource.get ~supportsAllDrives:true ~std_params:file_std_params
-         ~fileId:default_root_folder_id)
-    >>= fun file -> SessionM.return file)
+     get_file_from_server default_root_folder_id device_root_folder false
+     >>= fun root_option ->
+     match root_option with
+     | None ->
+         let file =
+           {
+             File.empty with
+             File.name = device_root_folder;
+             mimeType = "application/vnd.google-apps.folder";
+           }
+         in
+         Utils.log_with_header "BEGIN: Creating root (%s) on server\n%!"
+           device_root_folder;
+         with_retry_default
+           (FilesResource.create ~enforceSingleParent:true
+              ~supportsAllDrives:true ~std_params:file_std_params file)
+         >>= fun created_file ->
+         Utils.log_with_header "END: Creating root (id=%s) on server\n%!"
+           created_file.File.id;
+         SessionM.return created_file
+     | Some root -> SessionM.return root
+   else
+     with_retry_default
+       (FilesResource.get ~supportsAllDrives:true ~std_params:file_std_params
+          ~fileId:default_root_folder_id)
+     >>= fun file -> SessionM.return file)
   >>= fun file ->
   Utils.log_with_header "END: Getting root resource (id=%s) from server\n%!"
     file.File.id;
@@ -782,14 +783,14 @@ let get_root_folder_id config =
     | id -> id
   in
   (match config.Config.root_folder with
-  | "" -> SessionM.return default_root_id
-  | s when not (Filename.is_relative s) ->
-      loop (String.sub s 1 (String.length s - 1)) default_root_id
-  | s -> SessionM.return s)
+    | "" -> SessionM.return default_root_id
+    | s when not (Filename.is_relative s) ->
+        loop (String.sub s 1 (String.length s - 1)) default_root_id
+    | s -> SessionM.return s)
   >>= fun root_folder_id ->
   (if root_folder_id = default_root_folder_id then
-   get_root_folder_id_from_server config
-  else SessionM.return root_folder_id)
+     get_root_folder_id_from_server config
+   else SessionM.return root_folder_id)
   >>= fun root_folder_id ->
   Utils.log_with_header "END: Getting root folder id (id=%s) from server\n%!"
     root_folder_id;
@@ -939,8 +940,8 @@ let get_metadata () =
               parent_remote_ids
             |> List.concat
             |> List.filter (fun r ->
-                   r.CacheData.Resource.state
-                   = CacheData.Resource.State.Synchronized)
+                r.CacheData.Resource.state
+                = CacheData.Resource.State.Synchronized)
           in
           match parent_resources with
           | [] -> []
@@ -1326,17 +1327,17 @@ and get_resource path trashed =
 
   let refresh_resource resource cache =
     (if Option.is_some resource.CacheData.Resource.remote_id then (
-     let remote_id = resource.CacheData.Resource.remote_id |> Option.get in
-     Utils.log_with_header "BEGIN: Getting file from server (remote id=%s)\n%!"
-       remote_id;
-     with_retry_default
-       (FilesResource.get ~supportsAllDrives:true ~std_params:file_std_params
-          ~fileId:remote_id)
-     >>= fun file ->
-     Utils.log_with_header "END: Getting file from server (remote id=%s)\n%!"
-       remote_id;
-     SessionM.return (Some file))
-    else SessionM.return None)
+       let remote_id = resource.CacheData.Resource.remote_id |> Option.get in
+       Utils.log_with_header
+         "BEGIN: Getting file from server (remote id=%s)\n%!" remote_id;
+       with_retry_default
+         (FilesResource.get ~supportsAllDrives:true ~std_params:file_std_params
+            ~fileId:remote_id)
+       >>= fun file ->
+       Utils.log_with_header "END: Getting file from server (remote id=%s)\n%!"
+         remote_id;
+       SessionM.return (Some file))
+     else SessionM.return None)
     >>= fun refreshed_file ->
     match refreshed_file with
     | None ->
@@ -1374,11 +1375,11 @@ and get_resource path trashed =
   else
     let cache = Context.get_cache () in
     (match lookup_resource path trashed with
-    | None -> get_new_resource cache
-    | Some resource ->
-        if CacheData.Resource.is_valid resource metadata_last_update then
-          SessionM.return resource
-        else with_retry_default (refresh_resource resource cache))
+      | None -> get_new_resource cache
+      | Some resource ->
+          if CacheData.Resource.is_valid resource metadata_last_update then
+            SessionM.return resource
+          else with_retry_default (refresh_resource resource cache))
     >>= fun resource ->
     match resource.CacheData.Resource.state with
     | CacheData.Resource.State.NotFound -> Utils.raise_m File_not_found
@@ -1569,21 +1570,21 @@ let download_resource resource =
     Utils.log_with_header "BEGIN: Downloading resource (id=%Ld) to %s\n%!"
       resource.CacheData.Resource.id content_path;
     (if is_desktop_format resource config then (
-     shrink_cache_before_downloading () >>= fun () ->
-     update_cache_size_for_documents cache resource content_path Int64.neg;
-     if config.Config.desktop_entry_as_html then
-       create_html_with_redirect resource content_path config
-     else create_desktop_entry resource content_path config;
-     SessionM.return ())
-    else
-      shrink_cache_before_downloading () >>= fun () ->
-      update_cached_resource_state cache CacheData.Resource.State.Downloading
-        resource.CacheData.Resource.id;
-      update_cache_size_for_documents cache resource content_path Int64.neg;
-      Utils.try_with_m (do_api_download ()) (fun e ->
-          update_cached_resource_state cache CacheData.Resource.State.ToDownload
-            resource.CacheData.Resource.id;
-          handle_default_exceptions e))
+       shrink_cache_before_downloading () >>= fun () ->
+       update_cache_size_for_documents cache resource content_path Int64.neg;
+       if config.Config.desktop_entry_as_html then
+         create_html_with_redirect resource content_path config
+       else create_desktop_entry resource content_path config;
+       SessionM.return ())
+     else
+       shrink_cache_before_downloading () >>= fun () ->
+       update_cached_resource_state cache CacheData.Resource.State.Downloading
+         resource.CacheData.Resource.id;
+       update_cache_size_for_documents cache resource content_path Int64.neg;
+       Utils.try_with_m (do_api_download ()) (fun e ->
+           update_cached_resource_state cache
+             CacheData.Resource.State.ToDownload resource.CacheData.Resource.id;
+           handle_default_exceptions e))
     >>= fun () ->
     update_cache_size_for_documents cache resource content_path Std.identity;
     Utils.log_with_header "END: Downloading resource (id=%Ld) to %s\n%!"
@@ -1727,8 +1728,8 @@ let fetch_link_target path_in_cache trashed cache =
           get_resource_with_id tid cache >>= fun link_resource ->
           let link_target =
             (if ExtString.String.ends_with mountpoint_path Filename.dir_sep then
-             Filename.chop_suffix mountpoint_path Filename.dir_sep
-            else mountpoint_path)
+               Filename.chop_suffix mountpoint_path Filename.dir_sep
+             else mountpoint_path)
             ^ link_resource.CacheData.Resource.path
           in
           let updated_resource =
@@ -1748,12 +1749,13 @@ let get_attr path =
   let request_resource =
     get_resource path_in_cache trashed >>= fun resource ->
     (if CacheData.Resource.is_document resource && config.Config.download_docs
-    then
-     Utils.try_with_m
-       (flush_memory_buffers resource;
-        with_retry download_resource resource)
-       (function File_not_found -> SessionM.return "" | e -> Utils.raise_m e)
-    else SessionM.return "")
+     then
+       Utils.try_with_m
+         (flush_memory_buffers resource;
+          with_retry download_resource resource)
+         (function
+           | File_not_found -> SessionM.return "" | e -> Utils.raise_m e)
+     else SessionM.return "")
     >>= fun content_path -> SessionM.return (resource, content_path)
   in
 
@@ -2408,38 +2410,39 @@ let create_remote_resource ?link_target is_folder path mode =
       | _ -> [ CacheData.Resource.mode_to_app_property mode ]
     in
     (match link_target with
-    | Some tp when is_shortcut ->
-        let target_path =
-          if Filename.is_relative tp then
-            let target_dirname = Filename.dirname path in
-            if target_dirname = Filename.dir_sep then target_dirname ^ tp
-            else target_dirname ^ Filename.dir_sep ^ tp
-          else tp
-        in
-        let target_path =
-          if ExtString.String.starts_with target_path mountpoint_path then
-            let mountpoint_path_length = String.length mountpoint_path in
-            String.sub target_path mountpoint_path_length
-              (String.length target_path - mountpoint_path_length)
-          else target_path
-        in
-        let target_path =
-          if ExtString.String.ends_with target_path Filename.dir_sep then
-            Filename.chop_suffix target_path Filename.dir_sep
-          else target_path
-        in
-        let normalized_target_path =
-          try Utils.normalize_absolute_path target_path with _ -> ""
-        in
-        let target_path_in_cache, target_trashed =
-          get_path_in_cache normalized_target_path config
-        in
-        get_resource target_path_in_cache target_trashed >>= fun resource ->
-        if CacheData.Resource.is_shortcut resource then
-          (* Drive doesn't support shortcuts to shortcuts *)
-          Utils.raise_m Permission_denied
-        else SessionM.return (Option.get resource.CacheData.Resource.remote_id)
-    | _ -> SessionM.return "")
+      | Some tp when is_shortcut ->
+          let target_path =
+            if Filename.is_relative tp then
+              let target_dirname = Filename.dirname path in
+              if target_dirname = Filename.dir_sep then target_dirname ^ tp
+              else target_dirname ^ Filename.dir_sep ^ tp
+            else tp
+          in
+          let target_path =
+            if ExtString.String.starts_with target_path mountpoint_path then
+              let mountpoint_path_length = String.length mountpoint_path in
+              String.sub target_path mountpoint_path_length
+                (String.length target_path - mountpoint_path_length)
+            else target_path
+          in
+          let target_path =
+            if ExtString.String.ends_with target_path Filename.dir_sep then
+              Filename.chop_suffix target_path Filename.dir_sep
+            else target_path
+          in
+          let normalized_target_path =
+            try Utils.normalize_absolute_path target_path with _ -> ""
+          in
+          let target_path_in_cache, target_trashed =
+            get_path_in_cache normalized_target_path config
+          in
+          get_resource target_path_in_cache target_trashed >>= fun resource ->
+          if CacheData.Resource.is_shortcut resource then
+            (* Drive doesn't support shortcuts to shortcuts *)
+            Utils.raise_m Permission_denied
+          else
+            SessionM.return (Option.get resource.CacheData.Resource.remote_id)
+      | _ -> SessionM.return "")
     >>= fun target_id ->
     let file =
       {
@@ -2738,8 +2741,8 @@ let rename path new_path =
     let rename_file resource =
       if old_name <> new_name then
         (if config.Config.mv_keep_target then
-         replace_target resource trash_target_and_rename_file
-        else trash_target_and_rename_file resource)
+           replace_target resource trash_target_and_rename_file
+         else trash_target_and_rename_file resource)
         >>= fun renamed_file -> SessionM.return (Some renamed_file)
       else SessionM.return None
     in
@@ -2754,21 +2757,21 @@ let rename path new_path =
         new_parent_resource.CacheData.Resource.remote_id |> Option.get
       in
       (if is_lost_and_found_root old_parent_path trashed config then
-       let custom_headers =
-         build_resource_keys_header_from_resources
-           [ new_parent_resource; resource ]
-       in
-       SessionM.return ("", custom_headers)
-      else
-        get_resource old_parent_path trashed >>= fun old_parent_resource ->
-        let old_parent_id =
-          old_parent_resource.CacheData.Resource.remote_id |> Option.get
-        in
-        let custom_headers =
-          build_resource_keys_header_from_resources
-            [ old_parent_resource; new_parent_resource; resource ]
-        in
-        SessionM.return (old_parent_id, custom_headers))
+         let custom_headers =
+           build_resource_keys_header_from_resources
+             [ new_parent_resource; resource ]
+         in
+         SessionM.return ("", custom_headers)
+       else
+         get_resource old_parent_path trashed >>= fun old_parent_resource ->
+         let old_parent_id =
+           old_parent_resource.CacheData.Resource.remote_id |> Option.get
+         in
+         let custom_headers =
+           build_resource_keys_header_from_resources
+             [ old_parent_resource; new_parent_resource; resource ]
+         in
+         SessionM.return (old_parent_id, custom_headers))
       >>= fun (old_parent_id, custom_headers) ->
       with_retry_default
         (FilesResource.update ~enforceSingleParent:true ~supportsAllDrives:true
@@ -2781,11 +2784,11 @@ let rename path new_path =
     in
     let move resource =
       (if old_parent_path <> new_parent_path then
-       (if config.Config.mv_keep_target then
-        replace_target resource trash_target_and_move
-       else trash_target_and_move resource)
-       >>= fun moved_file -> SessionM.return (Some moved_file)
-      else SessionM.return None)
+         (if config.Config.mv_keep_target then
+            replace_target resource trash_target_and_move
+          else trash_target_and_move resource)
+         >>= fun moved_file -> SessionM.return (Some moved_file)
+       else SessionM.return None)
       >>= fun moved_file ->
       rename_file resource >>= fun renamed_file ->
       if Option.is_some renamed_file then SessionM.return renamed_file

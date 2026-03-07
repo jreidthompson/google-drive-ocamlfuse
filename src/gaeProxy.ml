@@ -14,23 +14,25 @@ let gae_proxy_request page query_string =
           (fun pipe code headers session ->
             let response = GapiConversation.read_all pipe in
             (if code <> 200 then (
-             Utils.log_with_header "END: %s fail\n%!" page;
-             raise
-               (ServerError
-                  (Printf.sprintf "Server response: %s (code=%d)" response code)))
-            else
-              match response with
-              | "Not_found" ->
-                  Utils.log_with_header "END: %s not found, retrying\n%!" page;
-                  raise Not_found
-              | ("access_denied" | "ConflictError" | "Exception") as error_code
-                ->
-                  Utils.log_with_header "END: %s fail (error_code=%s)\n%!" page
-                    error_code;
-                  raise (ServerError ("error_code " ^ error_code))
-              | "Missing_request_id" -> failwith "Bug! Missing_request_id"
-              | "Missing_refresh_token" -> failwith "Bug! Missing_refresh_token"
-              | _ -> ());
+               Utils.log_with_header "END: %s fail\n%!" page;
+               raise
+                 (ServerError
+                    (Printf.sprintf "Server response: %s (code=%d)" response
+                       code)))
+             else
+               match response with
+               | "Not_found" ->
+                   Utils.log_with_header "END: %s not found, retrying\n%!" page;
+                   raise Not_found
+               | ("access_denied" | "ConflictError" | "Exception") as error_code
+                 ->
+                   Utils.log_with_header "END: %s fail (error_code=%s)\n%!" page
+                     error_code;
+                   raise (ServerError ("error_code " ^ error_code))
+               | "Missing_request_id" -> failwith "Bug! Missing_request_id"
+               | "Missing_refresh_token" ->
+                   failwith "Bug! Missing_refresh_token"
+               | _ -> ());
             Utils.log_with_header "END: %s ok\n%!" page;
             let json = Yojson.Safe.from_string response in
             let fields =

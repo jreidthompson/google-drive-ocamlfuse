@@ -404,47 +404,48 @@ module MemoryBuffers = struct
           SessionM.return (block, block.Block.state) )
       >>= fun (block, state) ->
       (match state with
-      | Block.Empty | Block.Error _ ->
-          (* Switch from global lock to block lock to allow concurrent
-           * streaming. *)
-          Utils.with_lock_m block.Block.buffer.BufferPool.Buffer.mutex
-            ( SessionM.return () >>= fun () ->
-              match block.Block.state with
-              | Block.Empty | Block.Error _ ->
-                  block.Block.state <- Block.Writing;
-                  Utils.try_with_m
-                    (fill_array block.Block.start_pos block.Block.sub_array)
-                    (fun e ->
-                      remove_partial_block (remote_id, block_index) block
-                        buffers;
-                      block.Block.state <- Block.Error e;
-                      Utils.log_with_header
-                        "Broadcasting streaming error (buffer id=%d, state=%s)\n\
-                         %!"
-                        block.Block.buffer.BufferPool.Buffer.id
-                        (Block.state_to_string block.Block.state);
-                      Condition.broadcast
-                        block.Block.buffer.BufferPool.Buffer.condition;
-                      raise e)
-                  >>= fun () ->
-                  block.Block.state <- Block.Full;
-                  Utils.log_with_header
-                    "Broadcasting streaming completion (buffer id=%d, state=%s)\n\
-                     %!"
-                    block.Block.buffer.BufferPool.Buffer.id
-                    (Block.state_to_string block.Block.state);
-                  Condition.broadcast
-                    block.Block.buffer.BufferPool.Buffer.condition;
-                  SessionM.return block
-              | Block.Full | Block.Dirty -> SessionM.return block
-              | Block.Writing ->
-                  wait_for_full_block block;
-                  SessionM.return block )
-      | Block.Full | Block.Dirty -> SessionM.return block
-      | Block.Writing ->
-          Utils.with_lock block.Block.buffer.BufferPool.Buffer.mutex (fun () ->
-              wait_for_full_block block);
-          SessionM.return block)
+        | Block.Empty | Block.Error _ ->
+            (* Switch from global lock to block lock to allow concurrent
+             * streaming. *)
+            Utils.with_lock_m block.Block.buffer.BufferPool.Buffer.mutex
+              ( SessionM.return () >>= fun () ->
+                match block.Block.state with
+                | Block.Empty | Block.Error _ ->
+                    block.Block.state <- Block.Writing;
+                    Utils.try_with_m
+                      (fill_array block.Block.start_pos block.Block.sub_array)
+                      (fun e ->
+                        remove_partial_block (remote_id, block_index) block
+                          buffers;
+                        block.Block.state <- Block.Error e;
+                        Utils.log_with_header
+                          "Broadcasting streaming error (buffer id=%d, state=%s)\n\
+                           %!"
+                          block.Block.buffer.BufferPool.Buffer.id
+                          (Block.state_to_string block.Block.state);
+                        Condition.broadcast
+                          block.Block.buffer.BufferPool.Buffer.condition;
+                        raise e)
+                    >>= fun () ->
+                    block.Block.state <- Block.Full;
+                    Utils.log_with_header
+                      "Broadcasting streaming completion (buffer id=%d, \
+                       state=%s)\n\
+                       %!"
+                      block.Block.buffer.BufferPool.Buffer.id
+                      (Block.state_to_string block.Block.state);
+                    Condition.broadcast
+                      block.Block.buffer.BufferPool.Buffer.condition;
+                    SessionM.return block
+                | Block.Full | Block.Dirty -> SessionM.return block
+                | Block.Writing ->
+                    wait_for_full_block block;
+                    SessionM.return block )
+        | Block.Full | Block.Dirty -> SessionM.return block
+        | Block.Writing ->
+            Utils.with_lock block.Block.buffer.BufferPool.Buffer.mutex
+              (fun () -> wait_for_full_block block);
+            SessionM.return block)
       >>= fun block ->
       Utils.with_lock_m buffers.mutex
         ( SessionM.return () >>= fun () ->

@@ -1,6 +1,6 @@
 Here you can find instructions on how to install `google-drive-ocamlfuse`. You can choose one of the following methods.
 
-## PPA repository
+## PPA repository (Ubuntu)
 
 I've set up a [PPA repository](https://launchpad.net/~alessandro-strada/+archive/ppa) where I've uploaded .deb packages for Ubuntu. To install the software using this method, run the following commands:
 
@@ -8,7 +8,7 @@ I've set up a [PPA repository](https://launchpad.net/~alessandro-strada/+archive
     sudo apt-get update
     sudo apt-get install google-drive-ocamlfuse
 
-## PPAs down
+### PPAs down
 
 As of 2 November 2020, the PPAs seem to be offline, returning a 404 Not Found error. As a workaround, get the .DEB file for your system, and install via `apt install ./deb-file.deb` at:
 
@@ -18,7 +18,7 @@ As of 2 November 2020, the PPAs seem to be offline, returning a 404 Not Found er
 
 (If `apt` throws errors related to `libc6`, try changing the version of `google-drive-ocamlfuse` downloaded.)
 
-## PPA repository (beta versions)
+### PPA repository (beta versions)
 
 This [PPA repository](https://launchpad.net/~alessandro-strada/+archive/ubuntu/google-drive-ocamlfuse-beta) hosts versions from [beta branch](https://github.com/astrada/google-drive-ocamlfuse/tree/beta). These are experimental versions, to test new functionalities. If you want to install them, run the following commands:
 
@@ -30,36 +30,94 @@ This [PPA repository](https://launchpad.net/~alessandro-strada/+archive/ubuntu/g
 
 There is Docker [image](https://hub.docker.com/r/maltokyo/docker-google-drive-ocamlfuse) maintained by [maltokyo](https://github.com/maltokyo).
 
-## Archlinux
+## Arch Linux
 
 `google-drive-ocamlfuse` is available in the [AUR](https://aur.archlinux.org/packages/google-drive-ocamlfuse/) (thanks to [mlq](http://pwmt.org/) for uploading the package). To install it, run:
 
     yaourt -S google-drive-ocamlfuse
 
-## Debian Stretch
+## Debian Trixie
 
 1. Run `sudo apt install software-properties-common dirmngr`
 
-2. As root, create the file `/etc/apt/sources.list.d/alessandro-strada-ubuntu-ppa-bionic.list` and write the following lines:
+2. As root, create the file `/usr/share/keyrings/alessandro-strada-ubuntu-ppa-plucky.sources` and write the following lines:
 
-    `deb http://ppa.launchpad.net/alessandro-strada/ppa/ubuntu xenial main`  
-    `deb-src http://ppa.launchpad.net/alessandro-strada/ppa/ubuntu xenial main`  
+    `Types:      deb`  
+    `URIs:       https://ppa.launchpadcontent.net/alessandro-strada/ppa/ubuntu`  
+    `Suites:     plucky`  
+    `Components: main`  
+    `Enabled:    yes`  
+    `Signed-By:  /usr/share/keyrings/9ea4d6fca5d37a5d1ca9c09aad5f235df639b041.asc`  
+  
+    `Types:      deb-src`  
+    `URIs:       https://ppa.launchpadcontent.net/alessandro-strada/ppa/ubuntu`  
+    `Suites:     plucky`  
+    `Components: main`  
+    `Enabled:    yes`  
+    `Signed-By:  /usr/share/keyrings/9ea4d6fca5d37a5d1ca9c09aad5f235df639b041.asc`  
 
-3. Then you need to add the key otherwise the command **apt update** will not take the new sourcelist into account
+3. Then you need to add the key otherwise the command **apt update** will not take the new sourcelist into account.
 
-    `sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys AD5F235DF639B041`  
+    Go to Ubuntu's OpenPGP keyserver: https://keyserver.ubuntu.com/
 
-    If you get a message like this: `gpg: keyserver receive failed: Server indicated a failure` Then do:
-    `sudo apt-key adv --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys AD5F235DF639B041`
+    Search for this public key: AD5F235DF639B041
+
+    Click on the link to download the ASC file.
+
+    As root, copy the ASC file into /usr/share/keyrings/
+
+    `sudo cp ~/Downloads/9ea4d6fca5d37a5d1ca9c09aad5f235df639b041.asc /usr/share/keyrings/`  
 
 4. Run `sudo apt update`
 5. Run `sudo apt install google-drive-ocamlfuse`
+
+## Debian Bookworm
+
+1. Run `sudo apt install software-properties-common dirmngr`
+
+2. As root, create the file `/etc/apt/sources.list.d/alessandro-strada-ubuntu-ppa-jammy.list` and write the following lines:
+
+    `deb http://ppa.launchpad.net/alessandro-strada/ppa/ubuntu jammy main`  
+    `deb-src http://ppa.launchpad.net/alessandro-strada/ppa/ubuntu jammy main`  
+
+3. Then you need to add the key otherwise the command **apt update** will not take the new sourcelist into account.
+
+    Go to Ubuntu's OpenPGP keyserver: https://keyserver.ubuntu.com/
+
+    Search for this public key: AD5F235DF639B041
+
+    Click on the link to download the ASC file.
+
+    As root, copy the ASC file into /etc/apt/trusted.gpg.d/
+
+    `sudo cp ~/Downloads/9ea4d6fca5d37a5d1ca9c09aad5f235df639b041.asc /etc/apt/trusted.gpg.d/`  
+
+4. Run `sudo apt update`
+5. Run `sudo apt install google-drive-ocamlfuse`
+
+## Gentoo
+
+_As of 2025-09-10_:
+Unless you are on a testing (`~amd64`) branch, add the following packages to `/etc/portage/package.accept_keywords`:
+```
+sys-fs/google-drive-ocamlfuse
+dev-ml/gapi-ocaml
+dev-ml/ocamlfuse
+dev-ml/ocaml-sqlite3
+dev-ml/tiny_httpd
+dev-ml/hmap
+dev-ml/iostream
+```
+
+After that, just run `emerge -av sys-fs/google-drive-ocamlfuse`
 
 ## Installing from source
 
 If you are using a different distribution or you want to build the package from source, you may want to use OPAM (an OCaml package manager). If you are on a Debian Jessie, check out these instructions (contributed by Martin Gallant): [[How to install from source on Debian Jessie]].
 
 ### Installing with OPAM
+
+This is a generic guide - for OS-specific instruction, see further below.
 
 1. Install `OPAM` (http://opam.ocaml.org/doc/Install.html)
 
@@ -75,23 +133,7 @@ If you are using a different distribution or you want to build the package from 
 
         opam install google-drive-ocamlfuse
 
-### Installing with OPAM on AWS Linux
-
-Contributed by [ngr](https://github.com/ngr).
-
-    # Connect CentOS repository. It will work for Amazon-Linux.
-    sudo wget http://download.opensuse.org/repositories/home:ocaml/CentOS_7/home:ocaml.repo -P /etc/yum.repos.d/
-
-    # Install Ocaml and required dependencies.
-    sudo yum install opam ocaml gcc gcc-c++ m4 make ocamldoc ocaml-camlp4-devel ncurses-devel
-
-    opam init
-    opam update
-    opam install depext
-    opam depext google-drive-ocamlfuse
-    opam install google-drive-ocamlfuse
-
-### Installing with OPAM on macOs
+### Installing with OPAM on macOS
 
 If you have problem installing on macOS, with an error like this:
 
@@ -115,24 +157,9 @@ Installing OPAM on Debian/Raspbian can be a little difficult, because the defaul
     opam depext google-drive-ocamlfuse
     opam install google-drive-ocamlfuse
 
-### Installing with OPAM on Gentoo
+### Installing with OPAM on Fedora Linux
 
-Installing with OPAM on Gentoo can be achieved, but there are issues. Give this a try:
-
-    emerge sys-fs/fuse:0                                   #Currently no support for fuse version 3
-    emerge dev-db/sqlite:3                                 #Needs sqlite version 3
-    echo -e 'dev-ml/* ~amd64\t\t\t#Needed to install google-drive-ocamlfuse\n' >> /etc/portage/package.accept_keywords
-    emerge  dev-ml/opam
-    emerge --unmerge ocamlbuild                            #Prevent installation error
-    export OPAM_USER_PATH_RO=/rw/usrlocal:/root            #Allow install as root
-    opam init
-    opam install google-drive-ocamlfuse
-    opam install google-drive-ocamlfuse  --destdir /usr/local/
-    opam uninstall google-drive-ocamlfuse/
-
-### Installing with OPAM on Nobara Linux
-
-Tested on version 38, KDE edition. This may also work in Fedora Workstation.
+Also works on Nobara Linux and Ultramarine Linux. Last tested on Fedora 43.
 
 1. As root, install OPAM and google-drive-ocamlfuse dependencies:
 
@@ -150,6 +177,76 @@ You may be asked questions during initialisation, and will have to interact to c
 
 4. Evaluate your environment to add your new install to your `$PATH`
 
-        eval $(opam env)
+        eval $(opam env --switch=default)
 
 You will now be able to run `google-drive-ocamlfuse`.
+
+
+### Installing with OPAM on Gentoo
+
+Installing with OPAM on Gentoo can be achieved, but there are issues. Give this a try:
+
+    emerge sys-fs/fuse:0                                   #Currently no support for fuse version 3
+    emerge dev-db/sqlite:3                                 #Needs sqlite version 3
+    echo -e 'dev-ml/* ~amd64\t\t\t#Needed to install google-drive-ocamlfuse\n' >> /etc/portage/package.accept_keywords
+    emerge  dev-ml/opam
+    emerge --unmerge ocamlbuild                            #Prevent installation error
+    export OPAM_USER_PATH_RO=/rw/usrlocal:/root            #Allow install as root
+    opam init
+    opam install google-drive-ocamlfuse
+    opam install google-drive-ocamlfuse  --destdir /usr/local/
+    opam uninstall google-drive-ocamlfuse/
+
+### Installing with Flakes on NixOS
+
+This repository provides a Flake that builds from source using opam-nix
+
+1. Modify your configuration.nix to enable Flakes
+
+```
+{
+  
+  ...
+
+  nix.settings.experimental-features = [
+    "nix-command"
+    "flakes"
+  ];
+
+  environment.systemPackages = with pkgs; [
+
+    ...
+
+    git
+  ];
+}
+```
+2. Rebuild (`nixos-rebuild switch`)
+3. Add this flake to your system packages
+```
+{
+  environment.systemPackages = with pkgs; [
+
+    ...
+
+    (builtins.getFlake "github:astrada/google-drive-ocamlfuse").packages.x86_64-linux.default
+  ];
+}
+```
+4. Rebuild again
+
+### Installing with OPAM on AWS Linux
+
+Contributed by [ngr](https://github.com/ngr).
+
+    # Connect CentOS repository. It will work for Amazon-Linux.
+    sudo wget http://download.opensuse.org/repositories/home:ocaml/CentOS_7/home:ocaml.repo -P /etc/yum.repos.d/
+
+    # Install Ocaml and required dependencies.
+    sudo yum install opam ocaml gcc gcc-c++ m4 make ocamldoc ocaml-camlp4-devel ncurses-devel
+
+    opam init
+    opam update
+    opam install depext
+    opam depext google-drive-ocamlfuse
+    opam install google-drive-ocamlfuse
