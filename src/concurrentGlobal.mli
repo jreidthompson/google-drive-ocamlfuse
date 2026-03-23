@@ -1,8 +1,9 @@
-module Make : (M : sig
-                 type u
+module Make : functor
+  (M : sig
+     type u
 
-                 val label : string
-               end)
+     val label : string
+   end)
   -> sig
   type t = M.u
 

@@ -17,7 +17,7 @@ module type Data = sig
   val to_table : t -> (string, string) Hashtbl.t
 end
 
-module MakeFileStore : (D : Data) -> sig
+module MakeFileStore : functor (D : Data) -> sig
   type data = D.t
   type t = { path : string; data : data }
 
