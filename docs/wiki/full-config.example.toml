@@ -56,6 +56,13 @@ mv_keep_target = false
 [docs]
 # Download and expose Google Docs export formats.
 download_docs = true
+
+# Allow writing exported Google-native files back to Drive.
+# This only applies when the per-type format below is not `desktop`.
+# Warning: editing these files in place with tools like Vim can lose Google
+# formatting and metadata during the export/import round trip.
+editable_docs = false
+
 docs_file_extension = true
 
 # Export formats.

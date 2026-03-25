@@ -57,6 +57,7 @@ let docs_table =
     "apps_script_icon";
     "desktop_entry_exec";
     "desktop_entry_as_html";
+    "editable_docs";
   ]
 
 let cache_table =
@@ -149,6 +150,7 @@ let bool_keys =
     "async_upload_queue";
     "debug_buffers";
     "desktop_entry_as_html";
+    "editable_docs";
     "background_folder_fetching";
     "oauth2_loopback";
   ]

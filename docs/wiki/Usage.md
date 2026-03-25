@@ -78,6 +78,12 @@ Run `google-drive-ocamlfuse -help` to get all the command options available. To 
 * `off`: sets
   * `download_docs=false`
 
+To make Google-native files writable, choose a non-`desktop` export mode (for
+example `libreoffice` or `msoffice`) and set `[docs] editable_docs=true` in
+the config file.
+
+Warning: editing these files in place with tools like Vim can lose Google formatting and metadata during the export/import round trip.
+
 #### Since 0.7.11
 * `-serviceaccountpath`: This option can be used to specify the path of the JSON file containing the credentials of a service account
 * `-serviceaccountuser`: This option can be used to specify the email of a G Suite user to impersonate (with the service account specified by the `-serviceaccountpath` option)
@@ -94,4 +100,3 @@ Run `google-drive-ocamlfuse -help` to get all the command options available. To 
 * `-port`: This option can be used to specify a port for the embedded HTTP
   server, that will receive the verification code from Google during
   authorization. The default is 8080.
-

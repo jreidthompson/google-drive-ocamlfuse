@@ -230,6 +230,9 @@ different handoff boundaries.
 The upload path is primarily shaped by these config fields:
 
 - `write_buffers`
+- `editable_docs`
+- document export-format settings such as `document_format` and
+  `spreadsheet_format`
 - `autodetect_mime`
 - `async_upload_queue`
 - `async_upload_threads`
@@ -238,6 +241,10 @@ The upload path is primarily shaped by these config fields:
 Their main effects are:
 
 - `write_buffers`: dirty bytes may live in memory until a later flush point
+- `editable_docs`: allows write/upload flow for Google-native files unless
+  their configured format is `desktop`
+- per-type document format settings: choose the local exported representation
+  and, when `editable_docs = true`, the MIME type used on re-upload
 - `autodetect_mime`: `upload` may delegate MIME detection to Drive
 - `async_upload_queue`: choose direct upload vs queue handoff
 - `async_upload_threads`: size the async worker pool

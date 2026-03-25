@@ -81,9 +81,38 @@ already supplied the resource row that should be uploaded.
 
 The first real policy branch is content type selection.
 
+### Editable Exported Google Documents
+
+If the resource is a Google document and `config.editable_docs = true`, the
+function ignores the ordinary MIME autodetection path and instead derives the
+outgoing MIME type from the configured export format for that document type:
+
+- `document_format`
+- `drawing_format`
+- `form_format`
+- `presentation_format`
+- `spreadsheet_format`
+- `map_format`
+- `fusion_table_format`
+- `apps_script_format`
+
+In outline, that branch is:
+
+```ocaml
+let fmt = CacheData.Resource.get_format resource config in
+CacheData.Resource.mime_type_of_format fmt
+```
+
+So writable Google-native resources are uploaded back using the MIME type of
+their exported representation rather than the original Drive-native MIME type.
+
+This branch is only safe for non-`desktop` document formats. The write-open
+path rejects desktop-formatted Google documents earlier through
+`is_file_read_only`.
+
 ### `autodetect_mime = true`
 
-If:
+Otherwise, if:
 
 ```ocaml
 config.Config.autodetect_mime = true
