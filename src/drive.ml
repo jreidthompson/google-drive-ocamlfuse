@@ -1713,10 +1713,8 @@ let is_filesystem_read_only () =
 let is_file_read_only resource =
   let config = Context.get_ctx () |. Context.config_lens in
   (not (Option.default true resource.CacheData.Resource.can_edit))
-  || (CacheData.Resource.is_document resource
-      && not
-           (config.Config.editable_docs
-           && CacheData.Resource.get_format resource config <> "desktop"))
+  || CacheData.Resource.is_document resource
+     && ((not config.Config.editable_docs) || is_desktop_format resource config)
   || config.Config.large_file_read_only
      && CacheData.Resource.is_large_file config resource
 
