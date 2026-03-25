@@ -159,7 +159,8 @@ The current implementation of `is_file_read_only` returns true when any of
 these hold:
 
 - `resource.can_edit = Some false`
-- the resource is a Google document
+- the resource is a Google document and either `config.editable_docs = false`
+  or its configured export format is `desktop`
 - `config.large_file_read_only = true` and the resource is considered a large
   file under the current config
 
@@ -167,7 +168,9 @@ This is the real write-access policy enforced by `fopen`.
 
 A few implications follow:
 
-- Google documents are openable for reading but not for write-capable opens
+- Google documents are openable for reading by default
+- Google documents become writable only when `editable_docs = true` and the
+  current per-type export format is not `desktop`
 - large-file streaming policy can also become a write-denial policy when
   `large_file_read_only` is enabled
 - resources lacking an explicit `can_edit = false` are treated as editable by

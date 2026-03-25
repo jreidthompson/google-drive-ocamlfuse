@@ -1,3 +1,9 @@
+0.8.1
+=====
+This version introduces a new config option: `editable_docs`. If set to
+`true`, exported Google-native files can be modified locally and uploaded back
+to Drive, as long as the configured export format is not `desktop`.
+
 0.8.0
 =====
 This version introduces breaking changes:

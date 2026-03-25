@@ -193,7 +193,7 @@ Manual testing matters for:
 - uploads and flush/release timing
 - trash/delete behavior
 - shared/team-drive behavior
-- Google Docs export behavior
+- Google Docs export and editability behavior
 
 ## Known Structural Constraints
 

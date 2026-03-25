@@ -44,6 +44,10 @@ Current grouped layout:
 - `[async]`
 - `[logging]`
 
+The `[docs]` table carries both export-format settings and editability policy,
+including `editable_docs` for allowing writes to exported Google-native files
+when their configured format is not `desktop`.
+
 A full commented reference file lives at
 [`docs/wiki/full-config.example.toml`](../wiki/full-config.example.toml).
 

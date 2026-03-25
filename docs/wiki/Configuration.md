@@ -55,10 +55,22 @@ Specifies the Sqlite3 busy handler timeout in milliseconds:
     [cache]
     sqlite3_busy_timeout=5000
 
-Specifies whether to download Google Docs (these files are read-only, even if `read_only=false`):
+Specifies whether to download Google Docs (these files are read-only by default, even if `read_only=false`; see `editable_docs` below if you want to upload changes back to Drive):
 
     [docs]
     download_docs=true
+
+[Since 0.8.1] Specifies whether exported Google-native files should be writable and uploaded back to Drive. This works only if the configured export format for that file type is not `desktop`:
+
+    [docs]
+    editable_docs=false
+
+**Warning:** Editing a Google-native file in place with tools such as `vim` is
+not advisable. Some editors save changes by replacing the original file
+atomically instead of modifying it in place. In this case, important
+formatting and metadata from the original Google document may be lost. It is
+safer to copy the file outside of the mounted drive, edit it there, and then
+copy it back, overwriting the original.
 
 Text document [[export format|Exportable-formats#valid-download-formats-for-text-documents]]:
 
