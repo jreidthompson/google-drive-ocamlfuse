@@ -2,7 +2,7 @@ open GapiUtils.Infix
 open GapiLens.Infix
 
 let application_name = "google-drive-ocamlfuse"
-let version = "0.8.0"
+let version = "0.8.1"
 
 type t = {
   (* Number of seconds metadata should be cached. *)
@@ -854,8 +854,7 @@ let of_table table =
     redirect_uri = get "redirect_uri" Std.identity default.redirect_uri;
     desktop_entry_as_html =
       get "desktop_entry_as_html" bool_of_string default.desktop_entry_as_html;
-    editable_docs =
-      get "editable_docs" bool_of_string default.editable_docs;
+    editable_docs = get "editable_docs" bool_of_string default.editable_docs;
     async_upload_queue_max_length =
       get "async_upload_queue_max_length" int_of_string
         default.async_upload_queue_max_length;
