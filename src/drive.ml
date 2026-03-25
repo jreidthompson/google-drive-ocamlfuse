@@ -1713,7 +1713,10 @@ let is_filesystem_read_only () =
 let is_file_read_only resource =
   let config = Context.get_ctx () |. Context.config_lens in
   (not (Option.default true resource.CacheData.Resource.can_edit))
-  || CacheData.Resource.is_document resource
+  || (CacheData.Resource.is_document resource
+      && not
+           (config.Config.editable_docs
+           && CacheData.Resource.get_format resource config <> "desktop"))
   || config.Config.large_file_read_only
      && CacheData.Resource.is_large_file config resource
 
@@ -2245,7 +2248,11 @@ let upload resource =
   let content_path = Cache.get_content_path cache resource in
   let config = context |. Context.config_lens in
   let content_type =
-    if config.Config.autodetect_mime then ""
+    if CacheData.Resource.is_document resource && config.Config.editable_docs
+    then
+      let fmt = CacheData.Resource.get_format resource config in
+      CacheData.Resource.mime_type_of_format fmt
+    else if config.Config.autodetect_mime then ""
     else
       let file_source = GapiMediaResource.create_file_resource content_path in
       let resource_mime_type =

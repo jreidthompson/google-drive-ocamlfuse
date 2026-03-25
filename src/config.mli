@@ -67,6 +67,7 @@ type t = {
   scope : string;
   redirect_uri : string;
   desktop_entry_as_html : bool;
+  editable_docs : bool;
   async_upload_queue_max_length : int;
   background_folder_fetching : bool;
   oauth2_loopback : bool;
@@ -137,6 +138,7 @@ val service_account_user_to_impersonate : (t, string) GapiLens.t
 val scope : (t, string) GapiLens.t
 val redirect_uri : (t, string) GapiLens.t
 val desktop_entry_as_html : (t, bool) GapiLens.t
+val editable_docs : (t, bool) GapiLens.t
 val async_upload_queue_max_length : (t, int) GapiLens.t
 val background_folder_fetching : (t, bool) GapiLens.t
 val oauth2_loopback : (t, bool) GapiLens.t

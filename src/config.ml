@@ -148,6 +148,9 @@ type t = {
   (* Specifies if transform desktop entries in HTML files, as support for
    * .desktop files is being removed from Nautilus. *)
   desktop_entry_as_html : bool;
+  (* Allow writing to exported Google Docs (e.g. HTML) and uploading changes
+   * back to Drive. Requires a convertible document_format such as html or docx. *)
+  editable_docs : bool;
   (* Async upload queue maximum number of entries (files) before blocking.
    * 0 means unlimited. *)
   async_upload_queue_max_length : int;
@@ -551,6 +554,12 @@ let desktop_entry_as_html =
     GapiLens.set = (fun v x -> { x with desktop_entry_as_html = v });
   }
 
+let editable_docs =
+  {
+    GapiLens.get = (fun x -> x.editable_docs);
+    GapiLens.set = (fun v x -> { x with editable_docs = v });
+  }
+
 let async_upload_queue_max_length =
   {
     GapiLens.get = (fun x -> x.async_upload_queue_max_length);
@@ -655,6 +664,7 @@ let default =
     scope = "";
     redirect_uri = "";
     desktop_entry_as_html = false;
+    editable_docs = false;
     async_upload_queue_max_length = 0;
     background_folder_fetching = false;
     oauth2_loopback = true;
@@ -728,6 +738,7 @@ let default_debug =
     scope = "";
     redirect_uri = "";
     desktop_entry_as_html = false;
+    editable_docs = false;
     async_upload_queue_max_length = 0;
     background_folder_fetching = false;
     oauth2_loopback = true;
@@ -843,6 +854,8 @@ let of_table table =
     redirect_uri = get "redirect_uri" Std.identity default.redirect_uri;
     desktop_entry_as_html =
       get "desktop_entry_as_html" bool_of_string default.desktop_entry_as_html;
+    editable_docs =
+      get "editable_docs" bool_of_string default.editable_docs;
     async_upload_queue_max_length =
       get "async_upload_queue_max_length" int_of_string
         default.async_upload_queue_max_length;
@@ -926,6 +939,7 @@ let to_table data =
   add "scope" data.scope;
   add "redirect_uri" data.redirect_uri;
   add "desktop_entry_as_html" (data.desktop_entry_as_html |> string_of_bool);
+  add "editable_docs" (data.editable_docs |> string_of_bool);
   add "async_upload_queue_max_length"
     (data.async_upload_queue_max_length |> string_of_int);
   add "background_folder_fetching"
