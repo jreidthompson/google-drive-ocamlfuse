@@ -20,6 +20,7 @@ let rec wait_until predicate attempts =
     wait_until predicate (attempts - 1))
 
 let test_failed_worker_releases_slot () =
+  Thread.set_uncaught_exception_handler (fun _ -> ());
   let thread_pool = ThreadPool.create ~max_threads:1 () in
   let started_mutex = Mutex.create () in
   let started_condition = Condition.create () in
