@@ -2458,16 +2458,7 @@ let mkdir path mode = create_remote_resource true path mode
 
 (* END mkdir *)
 
-(* Check if a folder is empty or not *)
-let check_if_empty remote_id is_folder trashed =
-  DriveMutationPorts.check_if_empty_remote remote_id is_folder trashed
-
 (* Delete (trash) resources *)
-let trash_resource is_folder trashed path =
-  MutationOps.trash_resource (drive_mutation_runtime ()) is_folder trashed path
-
-let delete_resource is_folder path =
-  MutationOps.delete_resource (drive_mutation_runtime ()) is_folder path
 
 let delete_remote_resource is_folder path =
   do_request
