@@ -2364,14 +2364,20 @@ module DriveMutationPorts = struct
   let max_link_target_length = max_link_target_length
   let json_length = json_length
   let is_lost_and_found = is_lost_and_found
+  let is_lost_and_found_root = is_lost_and_found_root
   let get_path_in_cache = get_path_in_cache
   let is_filesystem_read_only = is_filesystem_read_only
   let create_resource = create_resource
+  let clean_document_extension = clean_document_extension
+  let recompute_path = recompute_path
   let update_resource_from_file = update_resource_from_file
   let get_resource = get_resource
 
   let build_resource_keys_header_from_resource =
     build_resource_keys_header_from_resource
+
+  let build_resource_keys_header_from_resources =
+    build_resource_keys_header_from_resources
 
   let insert_resource_into_cache = insert_resource_into_cache
   let update_cached_resource = update_cached_resource
@@ -2382,6 +2388,9 @@ module DriveMutationPorts = struct
 
   let delete_not_found_resource_with_path =
     Cache.Resource.delete_not_found_resource_with_path
+
+  let select_first_resource_with_remote_id =
+    Cache.Resource.select_first_resource_with_remote_id
 
   let remote_create file =
     with_retry_default
@@ -2397,6 +2406,33 @@ module DriveMutationPorts = struct
     with_retry_default
       (FilesResource.delete ~supportsAllDrives:true ~std_params:file_std_params
          ~custom_headers ~fileId)
+
+  let remote_move ~custom_headers ~addParents ~fileId ~removeParents file =
+    with_retry_default
+      (FilesResource.update ~enforceSingleParent:true ~supportsAllDrives:true
+         ~std_params:file_std_params ~custom_headers ~addParents ~fileId
+         ~removeParents file)
+
+  let replace_target_contents ~source ~target =
+    let context = Context.get_ctx () in
+    flush_memory_buffers source;
+    with_retry download_resource source >>= fun content_path ->
+    let cache = context.Context.cache in
+    let target_content_path = Cache.get_content_path cache target in
+    Utils.log_with_header
+      "Replacing cache content (source content path=%s, target content path = \
+       %s)\n\
+       %!"
+      content_path target_content_path;
+    Utils.file_copy content_path target_content_path;
+    let stats = Unix.LargeFile.stat target_content_path in
+    let file_size = stats.Unix.LargeFile.st_size in
+    let metadata = context |. Context.metadata_lens in
+    Utils.with_lock context.Context.metadata_lock (fun () ->
+        update_cache_size file_size metadata cache);
+    update_cached_resource_state cache CacheData.Resource.State.ToUpload
+      target.CacheData.Resource.id;
+    queue_upload target >>= fun () -> SessionM.return ()
 
   let check_if_empty_remote remote_id is_folder trashed =
     let config = Context.get_ctx () |. Context.config_lens in
@@ -2481,236 +2517,8 @@ let rmdir path = delete_remote_resource true path
 
 (* rename *)
 let rename path new_path =
-  let context = Context.get_ctx () in
-  let config = context |. Context.config_lens in
-  let path_in_cache, trashed = get_path_in_cache path config in
-  let new_path_in_cache, target_trashed = get_path_in_cache new_path config in
-  if trashed <> target_trashed then raise Permission_denied;
-
-  if
-    is_lost_and_found_root path trashed config
-    || is_lost_and_found new_path target_trashed config
-  then raise Permission_denied;
-
-  let old_parent_path = Filename.dirname path_in_cache in
-  let new_parent_path = Filename.dirname new_path_in_cache in
-  let old_name = Filename.basename path_in_cache in
-  let new_name = Filename.basename new_path_in_cache in
-  let delete_path path path_in_cache is_trashed =
-    let trash () =
-      get_resource path_in_cache is_trashed >>= fun resource ->
-      MutationOps.trash_resource
-        (drive_mutation_runtime ())
-        (CacheData.Resource.is_folder resource)
-        is_trashed path
-    in
-    if (not is_trashed) && not config.Config.keep_duplicates then
-      Utils.try_with_m (trash ()) (function
-        | File_not_found -> SessionM.return ()
-        | e -> Utils.raise_m e)
-    else SessionM.return ()
-  in
-  let delete_target_path =
-    delete_path new_path new_path_in_cache target_trashed
-  in
-  let delete_source_path = delete_path path path_in_cache trashed in
-  let update =
-    let trash_target_and_rename_file resource =
-      let remote_id = resource |. CacheData.Resource.remote_id |> Option.get in
-      delete_target_path >>= fun () ->
-      Utils.log_with_header
-        "BEGIN: Renaming file (remote id=%s) from %s to %s\n%!" remote_id
-        old_name new_name;
-      let clean_new_name = clean_document_extension new_name resource config in
-      let file_patch = { File.empty with File.name = clean_new_name } in
-      let custom_headers = build_resource_keys_header_from_resource resource in
-      with_retry_default
-        (FilesResource.update ~enforceSingleParent:true ~supportsAllDrives:true
-           ~std_params:file_std_params ~custom_headers ~fileId:remote_id
-           file_patch)
-      >>= fun patched_file ->
-      Utils.log_with_header
-        "END: Renaming file (remote id=%s) from %s to %s\n%!" remote_id old_name
-        new_name;
-      SessionM.return patched_file
-    in
-    let replace_target resource not_found_callback =
-      let remote_id = resource |. CacheData.Resource.remote_id |> Option.get in
-      let replace_target_content () =
-        get_resource new_path_in_cache target_trashed >>= fun target_resource ->
-        let target_remote_id =
-          target_resource |. CacheData.Resource.remote_id |> Option.get
-        in
-        Utils.log_with_header
-          "BEGIN: Replacing content of file %s (remote id=%s) with content of \
-           file %s (remote id=%s)\n\
-           %!"
-          new_name target_remote_id old_name remote_id;
-        flush_memory_buffers resource;
-        with_retry download_resource resource >>= fun content_path ->
-        let file_patch =
-          {
-            File.empty with
-            File.mimeType =
-              Option.default "" resource.CacheData.Resource.mime_type;
-          }
-        in
-        let custom_headers =
-          build_resource_keys_header_from_resource target_resource
-        in
-        with_retry_default
-          (FilesResource.update ~enforceSingleParent:true
-             ~supportsAllDrives:true ~std_params:file_std_params ~custom_headers
-             ~fileId:target_remote_id file_patch)
-        >>= fun patched_file ->
-        let cache = context.Context.cache in
-        let target_content_path =
-          Cache.get_content_path cache target_resource
-        in
-        Utils.log_with_header
-          "Replacing cache content (source content path=%s, target content \
-           path = %s)\n\
-           %!"
-          content_path target_content_path;
-        Utils.file_copy content_path target_content_path;
-        let stats = Unix.LargeFile.stat target_content_path in
-        let file_size = stats.Unix.LargeFile.st_size in
-        let metadata = context |. Context.metadata_lens in
-        Utils.with_lock context.Context.metadata_lock (fun () ->
-            update_cache_size file_size metadata cache);
-        update_cached_resource_state cache CacheData.Resource.State.ToUpload
-          target_resource.CacheData.Resource.id;
-        queue_upload target_resource >>= fun () ->
-        delete_source_path >>= fun () ->
-        Utils.log_with_header
-          "END: Replacing content of file %s (remote id=%s) with content of \
-           file %s (remote id=%s)\n\
-           %!"
-          new_name target_remote_id old_name remote_id;
-        SessionM.return patched_file
-      in
-      Utils.try_with_m (replace_target_content ()) (function
-        | File_not_found -> not_found_callback resource
-        | e -> Utils.raise_m e)
-    in
-    let rename_file resource =
-      if old_name <> new_name then
-        (if config.Config.mv_keep_target then
-           replace_target resource trash_target_and_rename_file
-         else trash_target_and_rename_file resource)
-        >>= fun renamed_file -> SessionM.return (Some renamed_file)
-      else SessionM.return None
-    in
-    let trash_target_and_move resource =
-      let remote_id = resource |. CacheData.Resource.remote_id |> Option.get in
-      delete_target_path >>= fun () ->
-      Utils.log_with_header
-        "BEGIN: Moving file (remote id=%s) from %s to %s\n%!" remote_id
-        old_parent_path new_parent_path;
-      get_resource new_parent_path target_trashed >>= fun new_parent_resource ->
-      let new_parent_id =
-        new_parent_resource.CacheData.Resource.remote_id |> Option.get
-      in
-      (if is_lost_and_found_root old_parent_path trashed config then
-         let custom_headers =
-           build_resource_keys_header_from_resources
-             [ new_parent_resource; resource ]
-         in
-         SessionM.return ("", custom_headers)
-       else
-         get_resource old_parent_path trashed >>= fun old_parent_resource ->
-         let old_parent_id =
-           old_parent_resource.CacheData.Resource.remote_id |> Option.get
-         in
-         let custom_headers =
-           build_resource_keys_header_from_resources
-             [ old_parent_resource; new_parent_resource; resource ]
-         in
-         SessionM.return (old_parent_id, custom_headers))
-      >>= fun (old_parent_id, custom_headers) ->
-      with_retry_default
-        (FilesResource.update ~enforceSingleParent:true ~supportsAllDrives:true
-           ~std_params:file_std_params ~custom_headers ~addParents:new_parent_id
-           ~fileId:remote_id ~removeParents:old_parent_id File.empty)
-      >>= fun patched_file ->
-      Utils.log_with_header "END: Moving file (remote id=%s) from %s to %s\n%!"
-        remote_id old_parent_path new_parent_path;
-      SessionM.return patched_file
-    in
-    let move resource =
-      (if old_parent_path <> new_parent_path then
-         (if config.Config.mv_keep_target then
-            replace_target resource trash_target_and_move
-          else trash_target_and_move resource)
-         >>= fun moved_file -> SessionM.return (Some moved_file)
-       else SessionM.return None)
-      >>= fun moved_file ->
-      rename_file resource >>= fun renamed_file ->
-      if Option.is_some renamed_file then SessionM.return renamed_file
-      else SessionM.return moved_file
-    in
-    update_remote_resource path move ~save_to_db:(fun cache resource file ->
-        let is_file_replaced =
-          resource.CacheData.Resource.remote_id <> Some file.File.id
-        in
-        let updated_resource =
-          (* When mv_keep_target is true, the resource to update is
-           * the target file. *)
-          if is_file_replaced then
-            let reloaded_resource =
-              Option.default resource
-                (Cache.Resource.select_first_resource_with_remote_id cache
-                   file.File.id)
-            in
-            update_resource_from_file reloaded_resource file
-          else update_resource_from_file resource file
-        in
-        let resource_with_new_path =
-          updated_resource
-          |> CacheData.Resource.path ^= new_path_in_cache
-          |> CacheData.Resource.parent_path ^= new_parent_path
-          |> CacheData.Resource.trashed ^= Some target_trashed
-          |> CacheData.Resource.state
-             ^=
-             if
-               CacheData.Resource.is_folder resource
-               || CacheData.Resource.is_document resource
-             then CacheData.Resource.State.ToDownload
-             else CacheData.Resource.State.Synchronized
-        in
-        let resource_to_save =
-          if
-            new_parent_path <> old_parent_path
-            && new_name = old_name && not is_file_replaced
-          then
-            let path = recompute_path resource_with_new_path new_name in
-            let parent_path = Filename.dirname path in
-            resource_with_new_path
-            |> CacheData.Resource.path ^= path
-            |> CacheData.Resource.parent_path ^= parent_path
-          else resource_with_new_path
-        in
-        update_cached_resource cache resource_to_save;
-        Utils.log_with_header
-          "BEGIN: Deleting 'NotFound' resources (path=%s) from cache\n%!"
-          new_path_in_cache;
-        Cache.Resource.delete_not_found_resource_with_path cache
-          new_path_in_cache;
-        Utils.log_with_header
-          "END: Deleting 'NotFound' resources (path=%s) from cache\n%!"
-          new_path_in_cache;
-        if CacheData.Resource.is_folder resource then (
-          Utils.log_with_header
-            "BEGIN: Deleting folder old content (path=%s, trashed=%b) from cache\n\
-             %!"
-            path_in_cache trashed;
-          Cache.Resource.delete_all_with_parent_path cache path_in_cache trashed;
-          Utils.log_with_header
-            "END: Deleting folder old content (path=%s, trashed=%b) from cache\n\
-             %!"
-            path_in_cache trashed))
-  in
-  do_request update |> ignore
+  do_request (MutationOps.rename (drive_mutation_runtime ()) path new_path)
+  |> ignore
 
 (* END rename *)
 

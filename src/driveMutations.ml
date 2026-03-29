@@ -21,9 +21,15 @@ module type PORTS = sig
   val max_link_target_length : int
   val json_length : string -> int
   val is_lost_and_found : string -> bool -> Config.t -> bool
+  val is_lost_and_found_root : string -> bool -> Config.t -> bool
   val get_path_in_cache : string -> Config.t -> string * bool
   val is_filesystem_read_only : unit -> bool
   val create_resource : string -> CacheData.Resource.t
+
+  val clean_document_extension :
+    string -> CacheData.Resource.t -> Config.t -> string
+
+  val recompute_path : CacheData.Resource.t -> string -> string
 
   val update_resource_from_file :
     ?state:CacheData.Resource.State.t ->
@@ -36,6 +42,9 @@ module type PORTS = sig
 
   val build_resource_keys_header_from_resource :
     CacheData.Resource.t -> GapiCore.Header.t list
+
+  val build_resource_keys_header_from_resources :
+    CacheData.Resource.t list -> GapiCore.Header.t list
 
   val insert_resource_into_cache :
     ?state:CacheData.Resource.State.t ->
@@ -51,6 +60,10 @@ module type PORTS = sig
   val trash_all_with_parent_path : CacheData.t -> string -> unit
   val invalidate_trash_bin : CacheData.t -> unit
   val delete_not_found_resource_with_path : CacheData.t -> string -> unit
+
+  val select_first_resource_with_remote_id :
+    CacheData.t -> string -> CacheData.Resource.t option
+
   val remote_create : File.t -> File.t SessionM.m
 
   val remote_update :
@@ -61,6 +74,19 @@ module type PORTS = sig
 
   val remote_delete :
     custom_headers:GapiCore.Header.t list -> fileId:string -> unit SessionM.m
+
+  val remote_move :
+    custom_headers:GapiCore.Header.t list ->
+    addParents:string ->
+    fileId:string ->
+    removeParents:string ->
+    File.t ->
+    File.t SessionM.m
+
+  val replace_target_contents :
+    source:CacheData.Resource.t ->
+    target:CacheData.Resource.t ->
+    unit SessionM.m
 
   val check_if_empty_remote : string -> bool -> bool -> unit SessionM.m
 end
@@ -288,4 +314,215 @@ module Make (P : PORTS) = struct
 
   let unlink runtime path = delete_remote_resource runtime false path
   let rmdir runtime path = delete_remote_resource runtime true path
+
+  let rename runtime path new_path =
+    let path_in_cache, trashed = P.get_path_in_cache path runtime.config in
+    let new_path_in_cache, target_trashed =
+      P.get_path_in_cache new_path runtime.config
+    in
+    if trashed <> target_trashed then raise Permission_denied;
+    if
+      P.is_lost_and_found_root path trashed runtime.config
+      || P.is_lost_and_found new_path target_trashed runtime.config
+    then raise Permission_denied;
+    let old_parent_path = Filename.dirname path_in_cache in
+    let new_parent_path = Filename.dirname new_path_in_cache in
+    let old_name = Filename.basename path_in_cache in
+    let new_name = Filename.basename new_path_in_cache in
+    let delete_path path path_in_cache is_trashed =
+      let trash () =
+        P.get_resource path_in_cache is_trashed >>= fun resource ->
+        trash_resource runtime
+          (CacheData.Resource.is_folder resource)
+          is_trashed path
+      in
+      if (not is_trashed) && not runtime.config.Config.keep_duplicates then
+        Utils.try_with_m (trash ()) (function
+          | File_not_found -> SessionM.return ()
+          | e -> Utils.raise_m e)
+      else SessionM.return ()
+    in
+    let delete_target_path =
+      delete_path new_path new_path_in_cache target_trashed
+    in
+    let delete_source_path = delete_path path path_in_cache trashed in
+    let update =
+      let trash_target_and_rename_file resource =
+        let remote_id = Option.get resource.CacheData.Resource.remote_id in
+        delete_target_path >>= fun () ->
+        Utils.log_with_header
+          "BEGIN: Renaming file (remote id=%s) from %s to %s\n%!" remote_id
+          old_name new_name;
+        let clean_new_name =
+          P.clean_document_extension new_name resource runtime.config
+        in
+        let file_patch = { File.empty with File.name = clean_new_name } in
+        let custom_headers =
+          P.build_resource_keys_header_from_resource resource
+        in
+        P.remote_update ~custom_headers ~fileId:remote_id file_patch
+        >>= fun patched_file ->
+        Utils.log_with_header
+          "END: Renaming file (remote id=%s) from %s to %s\n%!" remote_id
+          old_name new_name;
+        SessionM.return patched_file
+      in
+      let replace_target resource not_found_callback =
+        let remote_id = Option.get resource.CacheData.Resource.remote_id in
+        let replace_target_content () =
+          P.get_resource new_path_in_cache target_trashed
+          >>= fun target_resource ->
+          let target_remote_id =
+            Option.get target_resource.CacheData.Resource.remote_id
+          in
+          Utils.log_with_header
+            "BEGIN: Replacing content of file %s (remote id=%s) with content \
+             of file %s (remote id=%s)\n\
+             %!"
+            new_name target_remote_id old_name remote_id;
+          let file_patch =
+            {
+              File.empty with
+              File.mimeType =
+                Option.default "" resource.CacheData.Resource.mime_type;
+            }
+          in
+          let custom_headers =
+            P.build_resource_keys_header_from_resource target_resource
+          in
+          P.remote_update ~custom_headers ~fileId:target_remote_id file_patch
+          >>= fun patched_file ->
+          P.replace_target_contents ~source:resource ~target:target_resource
+          >>= fun () ->
+          delete_source_path >>= fun () ->
+          Utils.log_with_header
+            "END: Replacing content of file %s (remote id=%s) with content of \
+             file %s (remote id=%s)\n\
+             %!"
+            new_name target_remote_id old_name remote_id;
+          SessionM.return patched_file
+        in
+        Utils.try_with_m (replace_target_content ()) (function
+          | File_not_found -> not_found_callback resource
+          | e -> Utils.raise_m e)
+      in
+      let rename_file resource =
+        if old_name <> new_name then
+          (if runtime.config.Config.mv_keep_target then
+             replace_target resource trash_target_and_rename_file
+           else trash_target_and_rename_file resource)
+          >>= fun renamed_file -> SessionM.return (Some renamed_file)
+        else SessionM.return None
+      in
+      let trash_target_and_move resource =
+        let remote_id = Option.get resource.CacheData.Resource.remote_id in
+        delete_target_path >>= fun () ->
+        Utils.log_with_header
+          "BEGIN: Moving file (remote id=%s) from %s to %s\n%!" remote_id
+          old_parent_path new_parent_path;
+        P.get_resource new_parent_path target_trashed
+        >>= fun new_parent_resource ->
+        let new_parent_id =
+          Option.get new_parent_resource.CacheData.Resource.remote_id
+        in
+        (if P.is_lost_and_found_root old_parent_path trashed runtime.config then
+           let custom_headers =
+             P.build_resource_keys_header_from_resources
+               [ new_parent_resource; resource ]
+           in
+           SessionM.return ("", custom_headers)
+         else
+           P.get_resource old_parent_path trashed >>= fun old_parent_resource ->
+           let old_parent_id =
+             Option.get old_parent_resource.CacheData.Resource.remote_id
+           in
+           let custom_headers =
+             P.build_resource_keys_header_from_resources
+               [ old_parent_resource; new_parent_resource; resource ]
+           in
+           SessionM.return (old_parent_id, custom_headers))
+        >>= fun (old_parent_id, custom_headers) ->
+        P.remote_move ~custom_headers ~addParents:new_parent_id
+          ~fileId:remote_id ~removeParents:old_parent_id File.empty
+        >>= fun patched_file ->
+        Utils.log_with_header
+          "END: Moving file (remote id=%s) from %s to %s\n%!" remote_id
+          old_parent_path new_parent_path;
+        SessionM.return patched_file
+      in
+      let move resource =
+        (if old_parent_path <> new_parent_path then
+           (if runtime.config.Config.mv_keep_target then
+              replace_target resource trash_target_and_move
+            else trash_target_and_move resource)
+           >>= fun moved_file -> SessionM.return (Some moved_file)
+         else SessionM.return None)
+        >>= fun moved_file ->
+        rename_file resource >>= fun renamed_file ->
+        if Option.is_some renamed_file then SessionM.return renamed_file
+        else SessionM.return moved_file
+      in
+      update_remote_resource runtime path move
+        ~save_to_db:(fun cache resource file ->
+          let is_file_replaced =
+            resource.CacheData.Resource.remote_id <> Some file.File.id
+          in
+          let updated_resource =
+            if is_file_replaced then
+              let reloaded_resource =
+                Option.default resource
+                  (P.select_first_resource_with_remote_id cache file.File.id)
+              in
+              P.update_resource_from_file reloaded_resource file
+            else P.update_resource_from_file resource file
+          in
+          let resource_with_new_path =
+            {
+              updated_resource with
+              CacheData.Resource.path = new_path_in_cache;
+              parent_path = new_parent_path;
+              trashed = Some target_trashed;
+              state =
+                (if
+                   CacheData.Resource.is_folder resource
+                   || CacheData.Resource.is_document resource
+                 then CacheData.Resource.State.ToDownload
+                 else CacheData.Resource.State.Synchronized);
+            }
+          in
+          let resource_to_save =
+            if
+              new_parent_path <> old_parent_path
+              && new_name = old_name && not is_file_replaced
+            then
+              let path = P.recompute_path resource_with_new_path new_name in
+              let parent_path = Filename.dirname path in
+              {
+                resource_with_new_path with
+                CacheData.Resource.path;
+                parent_path;
+              }
+            else resource_with_new_path
+          in
+          P.update_cached_resource cache resource_to_save;
+          Utils.log_with_header
+            "BEGIN: Deleting 'NotFound' resources (path=%s) from cache\n%!"
+            new_path_in_cache;
+          P.delete_not_found_resource_with_path cache new_path_in_cache;
+          Utils.log_with_header
+            "END: Deleting 'NotFound' resources (path=%s) from cache\n%!"
+            new_path_in_cache;
+          if CacheData.Resource.is_folder resource then (
+            Utils.log_with_header
+              "BEGIN: Deleting folder old content (path=%s, trashed=%b) from \
+               cache\n\
+               %!"
+              path_in_cache trashed;
+            P.delete_all_with_parent_path cache path_in_cache trashed;
+            Utils.log_with_header
+              "END: Deleting folder old content (path=%s, trashed=%b) from cache\n\
+               %!"
+              path_in_cache trashed))
+    in
+    update
 end

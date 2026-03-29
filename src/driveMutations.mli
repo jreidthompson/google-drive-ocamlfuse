@@ -17,9 +17,15 @@ module type PORTS = sig
   val max_link_target_length : int
   val json_length : string -> int
   val is_lost_and_found : string -> bool -> Config.t -> bool
+  val is_lost_and_found_root : string -> bool -> Config.t -> bool
   val get_path_in_cache : string -> Config.t -> string * bool
   val is_filesystem_read_only : unit -> bool
   val create_resource : string -> CacheData.Resource.t
+
+  val clean_document_extension :
+    string -> CacheData.Resource.t -> Config.t -> string
+
+  val recompute_path : CacheData.Resource.t -> string -> string
 
   val update_resource_from_file :
     ?state:CacheData.Resource.State.t ->
@@ -32,6 +38,9 @@ module type PORTS = sig
 
   val build_resource_keys_header_from_resource :
     CacheData.Resource.t -> GapiCore.Header.t list
+
+  val build_resource_keys_header_from_resources :
+    CacheData.Resource.t list -> GapiCore.Header.t list
 
   val insert_resource_into_cache :
     ?state:CacheData.Resource.State.t ->
@@ -48,6 +57,9 @@ module type PORTS = sig
   val invalidate_trash_bin : CacheData.t -> unit
   val delete_not_found_resource_with_path : CacheData.t -> string -> unit
 
+  val select_first_resource_with_remote_id :
+    CacheData.t -> string -> CacheData.Resource.t option
+
   val remote_create :
     GapiDriveV3Model.File.t -> GapiDriveV3Model.File.t GapiMonad.SessionM.m
 
@@ -60,6 +72,19 @@ module type PORTS = sig
   val remote_delete :
     custom_headers:GapiCore.Header.t list ->
     fileId:string ->
+    unit GapiMonad.SessionM.m
+
+  val remote_move :
+    custom_headers:GapiCore.Header.t list ->
+    addParents:string ->
+    fileId:string ->
+    removeParents:string ->
+    GapiDriveV3Model.File.t ->
+    GapiDriveV3Model.File.t GapiMonad.SessionM.m
+
+  val replace_target_contents :
+    source:CacheData.Resource.t ->
+    target:CacheData.Resource.t ->
     unit GapiMonad.SessionM.m
 
   val check_if_empty_remote :
@@ -99,4 +124,5 @@ module Make (P : PORTS) : sig
 
   val unlink : runtime -> string -> unit GapiMonad.SessionM.m
   val rmdir : runtime -> string -> unit GapiMonad.SessionM.m
+  val rename : runtime -> string -> string -> unit GapiMonad.SessionM.m
 end

@@ -32,16 +32,22 @@ module FakePorts = struct
   let remote_create_calls = ref []
   let remote_update_calls = ref []
   let remote_delete_calls = ref []
+  let remote_move_calls = ref []
+  let replace_target_contents_calls = ref []
   let children_present = ref false
   let next_id = ref 1L
+  let recompute_path_override = ref None
 
   let reset () =
     trace := [];
     remote_create_calls := [];
     remote_update_calls := [];
     remote_delete_calls := [];
+    remote_move_calls := [];
+    replace_target_contents_calls := [];
     children_present := false;
     next_id := 1L;
+    recompute_path_override := None;
     Hashtbl.reset resources
 
   let record event = trace := !trace @ [ event ]
@@ -84,10 +90,48 @@ module FakePorts = struct
   let max_link_target_length = Drive.max_link_target_length
   let json_length = Drive.json_length
   let is_lost_and_found = Drive.is_lost_and_found
+
+  let is_lost_and_found_root path trashed config =
+    if trashed || not config.Config.lost_and_found then false
+    else path = "/lost+found"
+
   let get_path_in_cache = Drive.get_path_in_cache
   let is_filesystem_read_only () = false
   let create_resource = Drive.create_resource
-  let update_resource_from_file = Drive.update_resource_from_file
+  let clean_document_extension name _resource _config = name
+
+  let recompute_path resource name =
+    match !recompute_path_override with
+    | Some path -> path
+    | None -> Filename.concat resource.CacheData.Resource.parent_path name
+
+  let update_resource_from_file ?state ?link_target resource file =
+    let link_target =
+      match link_target with
+      | None -> resource.CacheData.Resource.link_target
+      | Some target -> Some target
+    in
+    let path =
+      match resource.CacheData.Resource.name with
+      | Some cached_name when cached_name <> file.File.name ->
+          Filename.concat resource.CacheData.Resource.parent_path file.File.name
+      | _ -> resource.CacheData.Resource.path
+    in
+    let parent_path = Filename.dirname path in
+    let state = Option.default resource.CacheData.Resource.state state in
+    {
+      resource with
+      CacheData.Resource.remote_id = Some file.File.id;
+      name = Some file.File.name;
+      mime_type = Some file.File.mimeType;
+      size = Some file.File.size;
+      version = Some file.File.version;
+      trashed = Some file.File.trashed;
+      path;
+      parent_path;
+      state;
+      link_target;
+    }
 
   let get_resource path trashed =
     match find_resource path trashed with
@@ -98,6 +142,8 @@ module FakePorts = struct
 
   let build_resource_keys_header_from_resource =
     Drive.build_resource_keys_header_from_resource
+
+  let build_resource_keys_header_from_resources _resources = []
 
   let insert_resource_into_cache ?state ?link_target _cache resource file =
     let resource =
@@ -110,8 +156,17 @@ module FakePorts = struct
     inserted
 
   let update_cached_resource _cache resource =
-    Hashtbl.remove resources (key resource.CacheData.Resource.path false);
-    Hashtbl.remove resources (key resource.CacheData.Resource.path true);
+    let ids_to_remove =
+      Hashtbl.to_seq resources |> List.of_seq
+      |> List.filter_map (fun (k, existing) ->
+          if
+            existing.CacheData.Resource.id = resource.CacheData.Resource.id
+            || existing.CacheData.Resource.remote_id
+               = resource.CacheData.Resource.remote_id
+          then Some k
+          else None)
+    in
+    List.iter (Hashtbl.remove resources) ids_to_remove;
     add_resource resource;
     record ("update:" ^ resource.CacheData.Resource.path)
 
@@ -131,6 +186,9 @@ module FakePorts = struct
 
   let delete_not_found_resource_with_path _cache path =
     record ("delete_not_found:" ^ path)
+
+  let select_first_resource_with_remote_id _cache remote_id =
+    find_by_remote_id remote_id
 
   let remote_create file =
     remote_create_calls := !remote_create_calls @ [ file ];
@@ -159,7 +217,23 @@ module FakePorts = struct
     let file =
       match find_by_remote_id fileId with
       | Some resource ->
-          server_file_of_resource ~trashed:file_patch.File.trashed resource
+          let existing = server_file_of_resource resource in
+          {
+            existing with
+            File.name =
+              (if file_patch.File.name = "" then existing.File.name
+               else file_patch.File.name);
+            mimeType =
+              (if file_patch.File.mimeType = "" then existing.File.mimeType
+               else file_patch.File.mimeType);
+            appProperties =
+              (if file_patch.File.appProperties = [] then
+                 existing.File.appProperties
+               else file_patch.File.appProperties);
+            trashed =
+              (if file_patch.File.trashed then true else existing.File.trashed);
+            explicitlyTrashed = file_patch.File.trashed;
+          }
       | None ->
           {
             File.empty with
@@ -169,6 +243,26 @@ module FakePorts = struct
           }
     in
     SessionM.return file
+
+  let remote_move ~custom_headers:_ ~addParents ~fileId ~removeParents file =
+    remote_move_calls :=
+      !remote_move_calls @ [ (fileId, addParents, removeParents) ];
+    record ("remote_move:" ^ fileId);
+    let moved_file =
+      match find_by_remote_id fileId with
+      | Some resource -> server_file_of_resource resource
+      | None -> { file with File.id = fileId }
+    in
+    SessionM.return moved_file
+
+  let replace_target_contents ~source ~target =
+    replace_target_contents_calls :=
+      !replace_target_contents_calls
+      @ [ (source.CacheData.Resource.path, target.CacheData.Resource.path) ];
+    record
+      ("replace_target_contents:" ^ source.CacheData.Resource.path ^ ":"
+     ^ target.CacheData.Resource.path);
+    SessionM.return ()
 
   let remote_delete ~custom_headers:_ ~fileId =
     remote_delete_calls := !remote_delete_calls @ [ fileId ];
@@ -287,6 +381,88 @@ let test_delete_non_empty_folder_is_rejected () =
       assert_raises DriveMutations.Directory_not_empty (fun () ->
           run_session (Mutations.rmdir runtime "/docs")))
 
+let test_rename_within_same_parent_updates_name () =
+  with_reset (fun () ->
+      FakePorts.add_resource (make_resource "/" "root");
+      FakePorts.add_resource (make_resource ~name:"docs" "/docs" "docs-id");
+      FakePorts.add_resource
+        (make_resource ~mime_type:"text/plain" ~name:"old.txt" "/docs/old.txt"
+           "file-id");
+      let runtime = default_runtime () in
+      run_session (Mutations.rename runtime "/docs/old.txt" "/docs/new.txt");
+      let resource =
+        Option.get (FakePorts.find_resource "/docs/new.txt" false)
+      in
+      assert_equal (Some "new.txt") resource.CacheData.Resource.name;
+      assert_bool "expected old path to disappear"
+        (Option.is_none (FakePorts.find_resource "/docs/old.txt" false));
+      let file_id, patch = List.hd !FakePorts.remote_update_calls in
+      assert_equal "file-id" file_id;
+      assert_equal "new.txt" patch.File.name)
+
+let test_rename_across_trash_boundary_is_denied () =
+  with_reset (fun () ->
+      FakePorts.add_resource
+        (make_resource ~mime_type:"text/plain" ~name:"file.txt" "/file.txt"
+           "file-id");
+      let runtime = default_runtime () in
+      assert_raises DriveMutations.Permission_denied (fun () ->
+          run_session (Mutations.rename runtime "/file.txt" "/.Trash/file.txt")))
+
+let test_move_between_parents_updates_path () =
+  with_reset (fun () ->
+      FakePorts.add_resource (make_resource "/" "root");
+      FakePorts.add_resource (make_resource ~name:"src" "/src" "src-id");
+      FakePorts.add_resource (make_resource ~name:"dst" "/dst" "dst-id");
+      FakePorts.add_resource
+        (make_resource ~mime_type:"text/plain" ~name:"file.txt" "/src/file.txt"
+           "file-id");
+      let runtime = default_runtime () in
+      run_session (Mutations.rename runtime "/src/file.txt" "/dst/file.txt");
+      assert_equal
+        [ ("file-id", "dst-id", "src-id") ]
+        !FakePorts.remote_move_calls;
+      let resource =
+        Option.get (FakePorts.find_resource "/dst/file.txt" false)
+      in
+      assert_equal "/dst" resource.CacheData.Resource.parent_path)
+
+let test_rename_trashes_duplicate_target_first () =
+  with_reset (fun () ->
+      FakePorts.add_resource (make_resource "/" "root");
+      FakePorts.add_resource (make_resource ~name:"docs" "/docs" "docs-id");
+      FakePorts.add_resource
+        (make_resource ~mime_type:"text/plain" ~name:"source.txt"
+           "/docs/source.txt" "source-id");
+      FakePorts.add_resource
+        (make_resource ~mime_type:"text/plain" ~name:"dest.txt" "/docs/dest.txt"
+           "target-id");
+      let runtime = default_runtime () in
+      run_session (Mutations.rename runtime "/docs/source.txt" "/docs/dest.txt");
+      let first_id, first_patch = List.nth !FakePorts.remote_update_calls 0 in
+      let second_id, second_patch = List.nth !FakePorts.remote_update_calls 1 in
+      assert_equal "target-id" first_id;
+      assert_equal true first_patch.File.trashed;
+      assert_equal "source-id" second_id;
+      assert_equal "dest.txt" second_patch.File.name)
+
+let test_rename_with_mv_keep_target_replaces_content () =
+  with_reset (fun () ->
+      let config = { Config.default with mv_keep_target = true } in
+      FakePorts.add_resource (make_resource "/" "root");
+      FakePorts.add_resource (make_resource ~name:"docs" "/docs" "docs-id");
+      FakePorts.add_resource
+        (make_resource ~mime_type:"text/plain" ~name:"source.txt"
+           "/docs/source.txt" "source-id");
+      FakePorts.add_resource
+        (make_resource ~mime_type:"text/plain" ~name:"dest.txt" "/docs/dest.txt"
+           "target-id");
+      let runtime = default_runtime ~config () in
+      run_session (Mutations.rename runtime "/docs/source.txt" "/docs/dest.txt");
+      assert_equal
+        [ ("/docs/source.txt", "/docs/dest.txt") ]
+        !FakePorts.replace_target_contents_calls)
+
 let suite =
   "DriveMutations test"
   >::: [
@@ -302,4 +478,14 @@ let suite =
          "test_delete_can_skip_trash" >:: test_delete_can_skip_trash;
          "test_delete_non_empty_folder_is_rejected"
          >:: test_delete_non_empty_folder_is_rejected;
+         "test_rename_within_same_parent_updates_name"
+         >:: test_rename_within_same_parent_updates_name;
+         "test_rename_across_trash_boundary_is_denied"
+         >:: test_rename_across_trash_boundary_is_denied;
+         "test_move_between_parents_updates_path"
+         >:: test_move_between_parents_updates_path;
+         "test_rename_trashes_duplicate_target_first"
+         >:: test_rename_trashes_duplicate_target_first;
+         "test_rename_with_mv_keep_target_replaces_content"
+         >:: test_rename_with_mv_keep_target_replaces_content;
        ]
