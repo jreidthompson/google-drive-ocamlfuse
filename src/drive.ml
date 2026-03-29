@@ -5,13 +5,13 @@ open GapiMonad.SessionM.Infix
 open GapiDriveV3Model
 open GapiDriveV3Service
 
-exception Directory_not_empty
-exception Existing_attribute
-exception File_not_found
-exception IO_error
-exception Invalid_operation
-exception No_attribute
-exception Permission_denied
+exception Directory_not_empty = DriveMutations.Directory_not_empty
+exception Existing_attribute = DriveMutations.Existing_attribute
+exception File_not_found = DriveMutations.File_not_found
+exception IO_error = DriveMutations.IO_error
+exception Invalid_operation = DriveMutations.Invalid_operation
+exception No_attribute = DriveMutations.No_attribute
+exception Permission_denied = DriveMutations.Permission_denied
 
 let folder_mime_type = "application/vnd.google-apps.folder"
 let shortcut_mime_type = "application/vnd.google-apps.shortcut"
@@ -2360,138 +2360,91 @@ let fsync path ds file_descr = upload_if_dirty path
 (* release *)
 let release path flags hnd = upload_if_dirty path
 
-(* Create resources *)
-let create_remote_resource ?link_target is_folder path mode =
-  let config = Context.get_ctx () |. Context.config_lens in
-  let path_in_cache, trashed = get_path_in_cache path config in
-  if trashed then raise Permission_denied;
+module DriveMutationPorts = struct
+  let max_link_target_length = max_link_target_length
+  let json_length = json_length
+  let is_lost_and_found = is_lost_and_found
+  let get_path_in_cache = get_path_in_cache
+  let is_filesystem_read_only = is_filesystem_read_only
+  let create_resource = create_resource
+  let update_resource_from_file = update_resource_from_file
+  let get_resource = get_resource
 
-  let context = Context.get_ctx () in
-  let config = context |. Context.config_lens in
-  if is_lost_and_found path trashed config then raise Permission_denied;
+  let build_resource_keys_header_from_resource =
+    build_resource_keys_header_from_resource
 
-  let cache = context.Context.cache in
-  let parent_path = Filename.dirname path_in_cache in
-  let create_file =
-    let mountpoint_path = context.mountpoint_path in
-    let mountpoint_path =
-      if ExtString.String.ends_with mountpoint_path Filename.dir_sep then
-        Filename.chop_suffix mountpoint_path Filename.dir_sep
-      else mountpoint_path
-    in
-    get_resource parent_path trashed >>= fun parent_resource ->
-    let parent_id =
-      parent_resource |. CacheData.Resource.remote_id |> Option.get
-    in
-    let name = Filename.basename path_in_cache in
-    let is_shortcut =
-      (* A Drive Shortcut is created for relative targets or absolute 
-       * targets that are inside the mountpoint. Otherwise a symlink
-       * is created. N.B.: that doesn't work for relative targets outside
-       * the mountpoint. *)
-      match link_target with
-      | None -> false
-      | Some tp ->
-          if not (Filename.is_relative tp) then
-            ExtString.String.starts_with tp mountpoint_path
-          else true
-    in
-    let mimeType =
-      if is_shortcut then shortcut_mime_type
-      else if is_folder then folder_mime_type
-      else if config.Config.autodetect_mime then ""
-      else Mime.map_filename_to_mime_type name
-    in
-    let appProperties =
-      match link_target with
-      | Some link when not is_shortcut ->
-          if json_length link > max_link_target_length then
-            raise Invalid_operation
-          else
-            [
-              CacheData.Resource.link_target_to_app_property link;
-              CacheData.Resource.mode_to_app_property 0o120777;
-            ]
-      | _ -> [ CacheData.Resource.mode_to_app_property mode ]
-    in
-    (match link_target with
-      | Some tp when is_shortcut ->
-          let target_path =
-            if Filename.is_relative tp then
-              let target_dirname = Filename.dirname path in
-              if target_dirname = Filename.dir_sep then target_dirname ^ tp
-              else target_dirname ^ Filename.dir_sep ^ tp
-            else tp
-          in
-          let target_path =
-            if ExtString.String.starts_with target_path mountpoint_path then
-              let mountpoint_path_length = String.length mountpoint_path in
-              String.sub target_path mountpoint_path_length
-                (String.length target_path - mountpoint_path_length)
-            else target_path
-          in
-          let target_path =
-            if ExtString.String.ends_with target_path Filename.dir_sep then
-              Filename.chop_suffix target_path Filename.dir_sep
-            else target_path
-          in
-          let normalized_target_path =
-            try Utils.normalize_absolute_path target_path with _ -> ""
-          in
-          let target_path_in_cache, target_trashed =
-            get_path_in_cache normalized_target_path config
-          in
-          get_resource target_path_in_cache target_trashed >>= fun resource ->
-          if CacheData.Resource.is_shortcut resource then
-            (* Drive doesn't support shortcuts to shortcuts *)
-            Utils.raise_m Permission_denied
-          else
-            SessionM.return (Option.get resource.CacheData.Resource.remote_id)
-      | _ -> SessionM.return "")
-    >>= fun target_id ->
-    let file =
-      {
-        File.empty with
-        File.name;
-        parents = [ parent_id ];
-        mimeType;
-        appProperties;
-        shortcutDetails =
-          { File.ShortcutDetails.empty with targetId = target_id };
-      }
-    in
-    Utils.log_with_header
-      "BEGIN: Creating %s%s (path=%s, trashed=%b%s) on server\n%!"
-      (match link_target with
-      | None -> ""
-      | Some _ when is_shortcut -> "shortcut to "
-      | Some _ -> "symlink to ")
-      (if is_folder then "folder" else "file")
-      path_in_cache trashed
-      (match link_target with None -> "" | Some t -> ", target=" ^ t);
+  let insert_resource_into_cache = insert_resource_into_cache
+  let update_cached_resource = update_cached_resource
+  let delete_cached_resource = delete_cached_resource
+  let delete_all_with_parent_path = Cache.Resource.delete_all_with_parent_path
+  let trash_all_with_parent_path = Cache.Resource.trash_all_with_parent_path
+  let invalidate_trash_bin = Cache.Resource.invalidate_trash_bin
+
+  let delete_not_found_resource_with_path =
+    Cache.Resource.delete_not_found_resource_with_path
+
+  let remote_create file =
     with_retry_default
       (FilesResource.create ~enforceSingleParent:true ~supportsAllDrives:true
          ~std_params:file_std_params file)
-    >>= fun created_file ->
-    Utils.log_with_header
-      "END: Creating file/folder (path=%s, trashed=%b) on server\n%!"
-      path_in_cache trashed;
-    let new_resource = create_resource path_in_cache in
-    Utils.log_with_header
-      "BEGIN: Deleting 'NotFound' resources (path=%s) from cache\n%!"
-      path_in_cache;
-    Cache.Resource.delete_not_found_resource_with_path cache path_in_cache;
-    Utils.log_with_header
-      "END: Deleting 'NotFound' resources (path=%s) from cache\n%!"
-      path_in_cache;
-    let inserted =
-      insert_resource_into_cache ~state:CacheData.Resource.State.Synchronized
-        ?link_target cache new_resource created_file
-    in
-    SessionM.return inserted
-  in
-  if is_filesystem_read_only () then raise Permission_denied
-  else do_request create_file |> ignore
+
+  let remote_update ~custom_headers ~fileId file_patch =
+    with_retry_default
+      (FilesResource.update ~enforceSingleParent:true ~supportsAllDrives:true
+         ~std_params:file_std_params ~custom_headers ~fileId file_patch)
+
+  let remote_delete ~custom_headers ~fileId =
+    with_retry_default
+      (FilesResource.delete ~supportsAllDrives:true ~std_params:file_std_params
+         ~custom_headers ~fileId)
+
+  let check_if_empty_remote remote_id is_folder trashed =
+    let config = Context.get_ctx () |. Context.config_lens in
+    if is_folder then
+      let q =
+        Printf.sprintf "'%s' in parents and trashed = %b" remote_id trashed
+      in
+      let std_params =
+        {
+          GapiService.StandardParameters.default with
+          GapiService.StandardParameters.fields = "files(id)";
+        }
+      in
+      with_retry_default
+        (FilesResource.list ~supportsAllDrives:true
+           ~driveId:config.Config.team_drive_id
+           ~includeItemsFromAllDrives:(config.Config.team_drive_id <> "")
+           ~corpora:
+             (if config.Config.team_drive_id <> "" then "drive" else "user")
+           ~std_params ~pageSize:1 ~q)
+      >>= fun children ->
+      if children.FileList.files = [] then (
+        Utils.log_with_header "Folder (remote id=%s) is empty\n%!" remote_id;
+        SessionM.return ())
+      else (
+        Utils.log_with_header "Folder (remote id=%s) is not empty\n%!" remote_id;
+        raise Directory_not_empty)
+    else SessionM.return ()
+end
+
+module MutationOps = DriveMutations.Make (DriveMutationPorts)
+
+let drive_mutation_runtime () =
+  let context = Context.get_ctx () in
+  {
+    DriveMutations.cache = context.Context.cache;
+    config = context |. Context.config_lens;
+    mountpoint_path = context.Context.mountpoint_path;
+    skip_trash = context.Context.skip_trash;
+  }
+
+(* Create resources *)
+let create_remote_resource ?link_target is_folder path mode =
+  do_request
+    (MutationOps.create_remote_resource
+       (drive_mutation_runtime ())
+       ?link_target is_folder path mode)
+  |> ignore
 
 (* END Create resources *)
 
@@ -2507,118 +2460,21 @@ let mkdir path mode = create_remote_resource true path mode
 
 (* Check if a folder is empty or not *)
 let check_if_empty remote_id is_folder trashed =
-  let config = Context.get_ctx () |. Context.config_lens in
-  if is_folder then
-    let q =
-      Printf.sprintf "'%s' in parents and trashed = %b" remote_id trashed
-    in
-    let std_params =
-      {
-        GapiService.StandardParameters.default with
-        GapiService.StandardParameters.fields = "files(id)";
-      }
-    in
-    with_retry_default
-      (FilesResource.list ~supportsAllDrives:true
-         ~driveId:config.Config.team_drive_id
-         ~includeItemsFromAllDrives:(config.Config.team_drive_id <> "")
-         ~corpora:
-           (if config.Config.team_drive_id <> "" then "drive" else "user")
-         ~std_params ~pageSize:1 ~q)
-    >>= fun children ->
-    if children.FileList.files = [] then (
-      Utils.log_with_header "Folder (remote id=%s) is empty\n%!" remote_id;
-      SessionM.return ())
-    else (
-      Utils.log_with_header "Folder (remote id=%s) is not empty\n%!" remote_id;
-      raise Directory_not_empty)
-  else SessionM.return ()
+  DriveMutationPorts.check_if_empty_remote remote_id is_folder trashed
 
 (* Delete (trash) resources *)
 let trash_resource is_folder trashed path =
-  if trashed then raise Permission_denied;
+  MutationOps.trash_resource (drive_mutation_runtime ()) is_folder trashed path
 
-  let context = Context.get_ctx () in
-  let config = context |. Context.config_lens in
-  if is_lost_and_found path trashed config then raise Permission_denied;
-
-  let trash resource =
-    let remote_id = resource |. CacheData.Resource.remote_id |> Option.get in
-    check_if_empty remote_id is_folder trashed >>= fun () ->
-    Utils.log_with_header "BEGIN: Trashing file (remote id=%s)\n%!" remote_id;
-    let file_patch = { File.empty with File.trashed = true } in
-    let custom_headers = build_resource_keys_header_from_resource resource in
-    with_retry_default
-      (FilesResource.update ~enforceSingleParent:true ~supportsAllDrives:true
-         ~std_params:file_std_params ~custom_headers ~fileId:remote_id
-         file_patch)
-    >>= fun trashed_file ->
-    Utils.log_with_header "END: Trashing file (remote id=%s)\n%!" remote_id;
-    SessionM.return (Some trashed_file)
-  in
-  update_remote_resource
-    ~save_to_db:(fun cache resource file ->
-      let updated_resource =
-        resource |> CacheData.Resource.trashed ^= Some true
-      in
-      update_cached_resource cache updated_resource;
-      Cache.Resource.invalidate_trash_bin cache;
-      if is_folder then (
-        let path_in_cache, _ = get_path_in_cache path config in
-        Utils.log_with_header "BEGIN: Trashing folder old content (path=%s)\n%!"
-          path_in_cache;
-        Cache.Resource.trash_all_with_parent_path cache path_in_cache;
-        Utils.log_with_header "END: Trashing folder old content (path=%s)\n%!"
-          path_in_cache))
-    path trash
-
-(* Permanently delete resources *)
 let delete_resource is_folder path =
-  let config = Context.get_ctx () |. Context.config_lens in
-  let path_in_cache, trashed = get_path_in_cache path config in
-
-  let delete resource =
-    let remote_id = resource |. CacheData.Resource.remote_id |> Option.get in
-    check_if_empty remote_id is_folder trashed >>= fun () ->
-    Utils.log_with_header "BEGIN: Permanently deleting file (remote id=%s)\n%!"
-      remote_id;
-    let custom_headers = build_resource_keys_header_from_resource resource in
-    with_retry_default
-      (FilesResource.delete ~supportsAllDrives:true ~std_params:file_std_params
-         ~custom_headers ~fileId:remote_id)
-    >>= fun () ->
-    Utils.log_with_header "END: Permanently deleting file (remote id=%s)\n%!"
-      remote_id;
-    SessionM.return None
-  in
-  update_remote_resource
-    ~purge_cache:(fun cache resource ->
-      delete_cached_resource resource;
-      if is_folder then (
-        Utils.log_with_header
-          "BEGIN: Deleting folder old content (path=%s, trashed=%b) from cache\n\
-           %!"
-          path_in_cache trashed;
-        Cache.Resource.delete_all_with_parent_path cache path_in_cache trashed;
-        Utils.log_with_header
-          "END: Deleting folder old content (path=%s, trashed=%b) from cache\n\
-           %!"
-          path_in_cache trashed))
-    path delete
+  MutationOps.delete_resource (drive_mutation_runtime ()) is_folder path
 
 let delete_remote_resource is_folder path =
-  let context = Context.get_ctx () in
-  let config = context |. Context.config_lens in
-  let _, trashed = get_path_in_cache path config in
-
-  let trash_or_delete_file =
-    if
-      context.Context.skip_trash
-      || (trashed && config.Config.delete_forever_in_trash_folder)
-    then delete_resource is_folder path
-    else trash_resource is_folder trashed path
-  in
-  do_request trash_or_delete_file |> ignore
+  do_request
+    (MutationOps.delete_remote_resource
+       (drive_mutation_runtime ())
+       is_folder path)
+  |> ignore
 
 (* END Delete (trash) resources *)
 
@@ -2652,7 +2508,10 @@ let rename path new_path =
   let delete_path path path_in_cache is_trashed =
     let trash () =
       get_resource path_in_cache is_trashed >>= fun resource ->
-      trash_resource (CacheData.Resource.is_folder resource) is_trashed path
+      MutationOps.trash_resource
+        (drive_mutation_runtime ())
+        (CacheData.Resource.is_folder resource)
+        is_trashed path
     in
     if (not is_trashed) && not config.Config.keep_duplicates then
       Utils.try_with_m (trash ()) (function
