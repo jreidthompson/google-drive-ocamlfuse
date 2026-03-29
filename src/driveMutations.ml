@@ -85,7 +85,8 @@ module Make (P : PORTS) = struct
       | Some file -> save_to_db runtime.cache resource file);
       SessionM.return ()
     in
-    if P.is_filesystem_read_only () then raise Permission_denied else update_file
+    if P.is_filesystem_read_only () then raise Permission_denied
+    else update_file
 
   let normalized_mountpoint_path runtime =
     if ExtString.String.ends_with runtime.mountpoint_path Filename.dir_sep then
@@ -162,9 +163,9 @@ module Make (P : PORTS) = struct
         | _ -> [ CacheData.Resource.mode_to_app_property mode ]
       in
       (match link_target with
-      | Some target_path when is_shortcut ->
-          resolve_shortcut_target_id runtime path target_path
-      | _ -> SessionM.return "")
+        | Some target_path when is_shortcut ->
+            resolve_shortcut_target_id runtime path target_path
+        | _ -> SessionM.return "")
       >>= fun target_id ->
       let file =
         {
@@ -185,7 +186,9 @@ module Make (P : PORTS) = struct
         | Some _ -> "symlink to ")
         (if is_folder then "folder" else "file")
         path_in_cache trashed
-        (match link_target with None -> "" | Some target -> ", target=" ^ target);
+        (match link_target with
+        | None -> ""
+        | Some target -> ", target=" ^ target);
       P.remote_create file >>= fun created_file ->
       Utils.log_with_header
         "END: Creating file/folder (path=%s, trashed=%b) on server\n%!"
@@ -208,6 +211,7 @@ module Make (P : PORTS) = struct
 
   let mknod runtime path mode = create_remote_resource runtime false path mode
   let mkdir runtime path mode = create_remote_resource runtime true path mode
+
   let symlink runtime target linkpath =
     create_remote_resource runtime ~link_target:target false linkpath 0o777
 
@@ -220,7 +224,9 @@ module Make (P : PORTS) = struct
       P.check_if_empty_remote remote_id is_folder trashed >>= fun () ->
       Utils.log_with_header "BEGIN: Trashing file (remote id=%s)\n%!" remote_id;
       let file_patch = { File.empty with File.trashed = true } in
-      let custom_headers = P.build_resource_keys_header_from_resource resource in
+      let custom_headers =
+        P.build_resource_keys_header_from_resource resource
+      in
       P.remote_update ~custom_headers ~fileId:remote_id file_patch
       >>= fun trashed_file ->
       Utils.log_with_header "END: Trashing file (remote id=%s)\n%!" remote_id;
@@ -238,8 +244,8 @@ module Make (P : PORTS) = struct
           Utils.log_with_header
             "BEGIN: Trashing folder old content (path=%s)\n%!" path_in_cache;
           P.trash_all_with_parent_path cache path_in_cache;
-          Utils.log_with_header
-            "END: Trashing folder old content (path=%s)\n%!" path_in_cache))
+          Utils.log_with_header "END: Trashing folder old content (path=%s)\n%!"
+            path_in_cache))
       path trash
 
   let delete_resource runtime is_folder path =
@@ -249,10 +255,12 @@ module Make (P : PORTS) = struct
       P.check_if_empty_remote remote_id is_folder trashed >>= fun () ->
       Utils.log_with_header
         "BEGIN: Permanently deleting file (remote id=%s)\n%!" remote_id;
-      let custom_headers = P.build_resource_keys_header_from_resource resource in
+      let custom_headers =
+        P.build_resource_keys_header_from_resource resource
+      in
       P.remote_delete ~custom_headers ~fileId:remote_id >>= fun () ->
-      Utils.log_with_header
-        "END: Permanently deleting file (remote id=%s)\n%!" remote_id;
+      Utils.log_with_header "END: Permanently deleting file (remote id=%s)\n%!"
+        remote_id;
       SessionM.return None
     in
     update_remote_resource runtime
@@ -260,21 +268,21 @@ module Make (P : PORTS) = struct
         P.delete_cached_resource resource;
         if is_folder then (
           Utils.log_with_header
-            "BEGIN: Deleting folder old content (path=%s, trashed=%b) from \
-             cache\n\
+            "BEGIN: Deleting folder old content (path=%s, trashed=%b) from cache\n\
              %!"
             path_in_cache trashed;
           P.delete_all_with_parent_path cache path_in_cache trashed;
           Utils.log_with_header
-            "END: Deleting folder old content (path=%s, trashed=%b) from \
-             cache\n\
+            "END: Deleting folder old content (path=%s, trashed=%b) from cache\n\
              %!"
             path_in_cache trashed))
       path delete
 
   let delete_remote_resource runtime is_folder path =
     let _, trashed = P.get_path_in_cache path runtime.config in
-    if runtime.skip_trash || (trashed && runtime.config.delete_forever_in_trash_folder)
+    if
+      runtime.skip_trash
+      || (trashed && runtime.config.delete_forever_in_trash_folder)
     then delete_resource runtime is_folder path
     else trash_resource runtime is_folder trashed path
 

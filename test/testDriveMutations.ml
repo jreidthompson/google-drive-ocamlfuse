@@ -1,6 +1,5 @@
 open OUnit
 open GapiMonad
-
 module File = GapiDriveV3Model.File
 
 let session =
@@ -25,12 +24,7 @@ let dummy_cache =
 
 let default_runtime ?(config = Config.default) ?(mountpoint_path = "/mnt/gd")
     ?(skip_trash = false) () =
-  {
-    DriveMutations.cache = dummy_cache;
-    config;
-    mountpoint_path;
-    skip_trash;
-  }
+  { DriveMutations.cache = dummy_cache; config; mountpoint_path; skip_trash }
 
 module FakePorts = struct
   let trace = ref []
@@ -55,17 +49,19 @@ module FakePorts = struct
 
   let add_resource resource =
     let trashed = Option.default false resource.CacheData.Resource.trashed in
-    Hashtbl.replace resources (key resource.CacheData.Resource.path trashed)
+    Hashtbl.replace resources
+      (key resource.CacheData.Resource.path trashed)
       resource
 
   let find_resource path trashed =
-    try Some (Hashtbl.find resources (key path trashed)) with Not_found -> None
+    try Some (Hashtbl.find resources (key path trashed))
+    with Not_found -> None
 
   let find_by_remote_id remote_id =
     Hashtbl.to_seq_values resources
     |> List.of_seq
     |> List.find_opt (fun resource ->
-           resource.CacheData.Resource.remote_id = Some remote_id)
+        resource.CacheData.Resource.remote_id = Some remote_id)
 
   let server_file_of_resource ?(trashed = false) resource =
     let now = GapiDate.now () in
@@ -126,8 +122,7 @@ module FakePorts = struct
     record ("delete_cached:" ^ path)
 
   let delete_all_with_parent_path _cache parent_path trashed =
-    record
-      (Printf.sprintf "delete_children:%s:%b" parent_path trashed)
+    record (Printf.sprintf "delete_children:%s:%b" parent_path trashed)
 
   let trash_all_with_parent_path _cache parent_path =
     record ("trash_children:" ^ parent_path)
@@ -181,9 +176,9 @@ module FakePorts = struct
     SessionM.return ()
 
   let check_if_empty_remote remote_id is_folder _trashed =
-    record
-      (Printf.sprintf "check_empty:%s:%b" remote_id is_folder);
-    if is_folder && !children_present then raise DriveMutations.Directory_not_empty
+    record (Printf.sprintf "check_empty:%s:%b" remote_id is_folder);
+    if is_folder && !children_present then
+      raise DriveMutations.Directory_not_empty
     else SessionM.return ()
 end
 
@@ -220,8 +215,7 @@ let test_create_regular_file_inserts_into_cache () =
       assert_equal 1 (List.length !FakePorts.remote_create_calls);
       let created_file = List.hd !FakePorts.remote_create_calls in
       assert_equal "notes.txt" created_file.File.name;
-      assert_equal
-        (string_of_int 0o644)
+      assert_equal (string_of_int 0o644)
         (List.assoc "mode" created_file.File.appProperties);
       assert_bool "expected inserted resource"
         (Option.is_some (FakePorts.find_resource "/notes.txt" false));
@@ -231,11 +225,10 @@ let test_create_regular_file_inserts_into_cache () =
 let test_create_shortcut_from_relative_target () =
   with_reset (fun () ->
       FakePorts.add_resource (make_resource "/" "root");
+      FakePorts.add_resource (make_resource ~name:"links" "/links" "links-id");
       FakePorts.add_resource
-        (make_resource ~name:"links" "/links" "links-id");
-      FakePorts.add_resource
-        (make_resource ~mime_type:Drive.folder_mime_type ~name:"target" "/target"
-           "target-id");
+        (make_resource ~mime_type:Drive.folder_mime_type ~name:"target"
+           "/target" "target-id");
       let runtime = default_runtime () in
       run_session (Mutations.symlink runtime "../target" "/links/link");
       let created_file = List.hd !FakePorts.remote_create_calls in
@@ -246,15 +239,14 @@ let test_create_shortcut_from_relative_target () =
 let test_create_stored_symlink_for_external_target () =
   with_reset (fun () ->
       FakePorts.add_resource (make_resource "/" "root");
-      FakePorts.add_resource
-        (make_resource ~name:"links" "/links" "links-id");
+      FakePorts.add_resource (make_resource ~name:"links" "/links" "links-id");
       let runtime = default_runtime () in
       run_session (Mutations.symlink runtime "/tmp/external" "/links/link");
       let created_file = List.hd !FakePorts.remote_create_calls in
       assert_equal "" created_file.File.mimeType;
-      assert_equal "/tmp/external" (List.assoc "l" created_file.File.appProperties);
-      assert_equal
-        (string_of_int 0o120777)
+      assert_equal "/tmp/external"
+        (List.assoc "l" created_file.File.appProperties);
+      assert_equal (string_of_int 0o120777)
         (List.assoc "mode" created_file.File.appProperties))
 
 let test_create_in_trash_is_denied () =
@@ -272,8 +264,7 @@ let test_delete_uses_trash_by_default () =
       run_session (Mutations.unlink runtime "/file.txt");
       let resource = Option.get (FakePorts.find_resource "/file.txt" true) in
       assert_equal (Some true) resource.CacheData.Resource.trashed;
-      assert_equal [ "file-id" ]
-        (List.map fst !FakePorts.remote_update_calls);
+      assert_equal [ "file-id" ] (List.map fst !FakePorts.remote_update_calls);
       assert_bool "expected trash invalidation"
         (List.mem "invalidate_trash_bin" !FakePorts.trace))
 
@@ -291,8 +282,7 @@ let test_delete_can_skip_trash () =
 let test_delete_non_empty_folder_is_rejected () =
   with_reset (fun () ->
       FakePorts.children_present := true;
-      FakePorts.add_resource
-        (make_resource ~name:"docs" "/docs" "folder-id");
+      FakePorts.add_resource (make_resource ~name:"docs" "/docs" "folder-id");
       let runtime = default_runtime () in
       assert_raises DriveMutations.Directory_not_empty (fun () ->
           run_session (Mutations.rmdir runtime "/docs")))
@@ -307,7 +297,8 @@ let suite =
          "test_create_stored_symlink_for_external_target"
          >:: test_create_stored_symlink_for_external_target;
          "test_create_in_trash_is_denied" >:: test_create_in_trash_is_denied;
-         "test_delete_uses_trash_by_default" >:: test_delete_uses_trash_by_default;
+         "test_delete_uses_trash_by_default"
+         >:: test_delete_uses_trash_by_default;
          "test_delete_can_skip_trash" >:: test_delete_can_skip_trash;
          "test_delete_non_empty_folder_is_rejected"
          >:: test_delete_non_empty_folder_is_rejected;

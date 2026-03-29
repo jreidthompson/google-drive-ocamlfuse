@@ -28,8 +28,7 @@ module type PORTS = sig
     GapiDriveV3Model.File.t ->
     CacheData.Resource.t
 
-  val get_resource :
-    string -> bool -> CacheData.Resource.t GapiMonad.SessionM.m
+  val get_resource : string -> bool -> CacheData.Resource.t GapiMonad.SessionM.m
 
   val build_resource_keys_header_from_resource :
     CacheData.Resource.t -> GapiCore.Header.t list
@@ -93,8 +92,7 @@ module Make (P : PORTS) : sig
   val trash_resource :
     runtime -> bool -> bool -> string -> unit GapiMonad.SessionM.m
 
-  val delete_resource :
-    runtime -> bool -> string -> unit GapiMonad.SessionM.m
+  val delete_resource : runtime -> bool -> string -> unit GapiMonad.SessionM.m
 
   val delete_remote_resource :
     runtime -> bool -> string -> unit GapiMonad.SessionM.m
