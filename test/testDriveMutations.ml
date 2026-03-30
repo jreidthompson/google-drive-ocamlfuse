@@ -362,6 +362,36 @@ let test_create_in_trash_is_denied () =
       assert_raises DriveMutations.Permission_denied (fun () ->
           run_session (mknod runtime "/.Trash/file.txt" 0o644)))
 
+let test_create_under_lost_and_found_is_denied () =
+  with_reset (fun () ->
+      let config = { Config.default with lost_and_found = true } in
+      let runtime = default_runtime ~config () in
+      assert_raises DriveMutations.Permission_denied (fun () ->
+          run_session (mknod runtime "/lost+found/file.txt" 0o644)))
+
+let test_create_shortcut_from_absolute_target_inside_mountpoint () =
+  with_reset (fun () ->
+      FakePorts.add_resource (make_resource "/" "root");
+      FakePorts.add_resource (make_resource ~name:"links" "/links" "links-id");
+      FakePorts.add_resource
+        (make_resource ~mime_type:Drive.folder_mime_type ~name:"inside"
+           "/inside/file" "target-id");
+      let runtime = default_runtime ~mountpoint_path:"/mnt/gd/" () in
+      run_session (symlink runtime "/mnt/gd/inside/file" "/links/link");
+      let created_file = List.hd !FakePorts.remote_create_calls in
+      assert_equal Drive.shortcut_mime_type created_file.File.mimeType;
+      assert_equal "target-id"
+        created_file.File.shortcutDetails.File.ShortcutDetails.targetId)
+
+let test_create_stored_symlink_rejects_oversized_target () =
+  with_reset (fun () ->
+      FakePorts.add_resource (make_resource "/" "root");
+      FakePorts.add_resource (make_resource ~name:"links" "/links" "links-id");
+      let runtime = default_runtime () in
+      let oversized_target = "/" ^ String.make 256 'a' in
+      assert_raises DriveMutations.Invalid_operation (fun () ->
+          run_session (symlink runtime oversized_target "/links/link")))
+
 let test_delete_uses_trash_by_default () =
   with_reset (fun () ->
       FakePorts.add_resource
@@ -386,6 +416,18 @@ let test_delete_can_skip_trash () =
       assert_bool "expected cache deletion"
         (Option.is_none (FakePorts.find_resource "/file.txt" false)))
 
+let test_delete_from_trash_folder_can_delete_forever () =
+  with_reset (fun () ->
+      let config =
+        { Config.default with delete_forever_in_trash_folder = true }
+      in
+      FakePorts.add_resource
+        (make_resource ~trashed:true ~mime_type:"text/plain" ~name:"file.txt"
+           "/file.txt" "file-id");
+      let runtime = default_runtime ~config () in
+      run_session (unlink runtime "/.Trash/file.txt");
+      assert_equal [ "file-id" ] !FakePorts.remote_delete_calls)
+
 let test_delete_non_empty_folder_is_rejected () =
   with_reset (fun () ->
       FakePorts.children_present := true;
@@ -393,6 +435,13 @@ let test_delete_non_empty_folder_is_rejected () =
       let runtime = default_runtime () in
       assert_raises DriveMutations.Directory_not_empty (fun () ->
           run_session (rmdir runtime "/docs")))
+
+let test_delete_under_lost_and_found_is_denied () =
+  with_reset (fun () ->
+      let config = { Config.default with lost_and_found = true } in
+      let runtime = default_runtime ~config () in
+      assert_raises DriveMutations.Permission_denied (fun () ->
+          run_session (unlink runtime "/lost+found/file.txt")))
 
 let test_rename_within_same_parent_updates_name () =
   with_reset (fun () ->
@@ -476,6 +525,34 @@ let test_rename_with_mv_keep_target_replaces_content () =
         [ ("/docs/source.txt", "/docs/dest.txt") ]
         !FakePorts.replace_target_contents_calls)
 
+let test_folder_rename_clears_descendant_cache () =
+  with_reset (fun () ->
+      FakePorts.add_resource (make_resource "/" "root");
+      FakePorts.add_resource
+        (make_resource ~name:"folder" "/folder" "folder-id");
+      let runtime = default_runtime () in
+      run_session (Mutations.rename runtime "/folder" "/renamed");
+      assert_bool "expected descendant cleanup"
+        (List.mem "delete_children:/folder:false" !FakePorts.trace))
+
+let test_same_name_move_recomputes_visible_path () =
+  with_reset (fun () ->
+      FakePorts.recompute_path_override := Some "/dst/file (copy).txt";
+      FakePorts.add_resource (make_resource "/" "root");
+      FakePorts.add_resource (make_resource ~name:"src" "/src" "src-id");
+      FakePorts.add_resource (make_resource ~name:"dst" "/dst" "dst-id");
+      FakePorts.add_resource
+        (make_resource ~mime_type:"text/plain" ~name:"file.txt" "/src/file.txt"
+           "file-id");
+      let runtime = default_runtime () in
+      run_session (Mutations.rename runtime "/src/file.txt" "/dst/file.txt");
+      assert_bool "expected requested path to be replaced"
+        (Option.is_none (FakePorts.find_resource "/dst/file.txt" false));
+      let resource =
+        Option.get (FakePorts.find_resource "/dst/file (copy).txt" false)
+      in
+      assert_equal "/dst" resource.CacheData.Resource.parent_path)
+
 let suite =
   "DriveMutations test"
   >::: [
@@ -486,11 +563,21 @@ let suite =
          "test_create_stored_symlink_for_external_target"
          >:: test_create_stored_symlink_for_external_target;
          "test_create_in_trash_is_denied" >:: test_create_in_trash_is_denied;
+         "test_create_under_lost_and_found_is_denied"
+         >:: test_create_under_lost_and_found_is_denied;
+         "test_create_shortcut_from_absolute_target_inside_mountpoint"
+         >:: test_create_shortcut_from_absolute_target_inside_mountpoint;
+         "test_create_stored_symlink_rejects_oversized_target"
+         >:: test_create_stored_symlink_rejects_oversized_target;
          "test_delete_uses_trash_by_default"
          >:: test_delete_uses_trash_by_default;
          "test_delete_can_skip_trash" >:: test_delete_can_skip_trash;
+         "test_delete_from_trash_folder_can_delete_forever"
+         >:: test_delete_from_trash_folder_can_delete_forever;
          "test_delete_non_empty_folder_is_rejected"
          >:: test_delete_non_empty_folder_is_rejected;
+         "test_delete_under_lost_and_found_is_denied"
+         >:: test_delete_under_lost_and_found_is_denied;
          "test_rename_within_same_parent_updates_name"
          >:: test_rename_within_same_parent_updates_name;
          "test_rename_across_trash_boundary_is_denied"
@@ -501,4 +588,8 @@ let suite =
          >:: test_rename_trashes_duplicate_target_first;
          "test_rename_with_mv_keep_target_replaces_content"
          >:: test_rename_with_mv_keep_target_replaces_content;
+         "test_folder_rename_clears_descendant_cache"
+         >:: test_folder_rename_clears_descendant_cache;
+         "test_same_name_move_recomputes_visible_path"
+         >:: test_same_name_move_recomputes_visible_path;
        ]
