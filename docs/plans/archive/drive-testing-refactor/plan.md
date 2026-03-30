@@ -1,4 +1,10 @@
-# Plan: Make `Drive` Mutation Paths Unit-Testable
+# Archived Plan: Make `Drive` Mutation Paths Unit-Testable
+
+Archived after implementation.
+
+This plan was completed by extracting the mutation-heavy create/delete/rename
+paths into `DriveMutations`, reducing `Drive` to thin mutation adapters, and
+adding focused unit coverage in `test/testDriveMutations.ml`.
 
 ## Summary
 

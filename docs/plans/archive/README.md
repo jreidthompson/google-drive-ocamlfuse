@@ -9,3 +9,5 @@
 - `gdfuse-flow-testing-refactor/plan.md`: archived plan for moving the
   application flow into the library and making it unit testable with faked
   external dependencies.
+- `drive-testing-refactor/plan.md`: archived completed plan for extracting the
+  `DriveMutations` core and making `Drive` mutation paths unit testable.
