@@ -10,6 +10,16 @@ The executable mounts a FUSE filesystem whose operations are implemented in
 - Google Drive API calls through `gapi-ocaml`
 - background work such as uploads and folder prefetching
 
+The mutation-heavy create/delete/rename paths are split slightly
+differently from the read and upload paths:
+
+- `Drive` is the public FUSE-facing module
+- `src/driveMutations.ml` holds the extracted mutation core for
+  create/delete/rename policy and cache reconciliation
+- `src/drive.ml` provides the production `DriveMutationPorts` implementation,
+  builds the mutation runtime from `Context`, and executes those mutation
+  sessions through `Oauth2.do_request`
+
 The design is stateful. A global `Context.t` stores the current config, state,
 cache handle, memory buffers, locks, and background threads.
 
@@ -189,7 +199,8 @@ Path-level stat synthesis lives in `Drive.get_attr`; see
 `docs/agent-docs/drive-get-attr.md`.
 
 Regular file and folder creation requests enter through `Drive.mknod` /
-`Drive.mkdir`; see `docs/agent-docs/drive-mknod-mkdir.md`.
+`Drive.mkdir`; the public wrappers then flow into the extracted mutation core.
+See `docs/agent-docs/drive-mknod-mkdir.md`.
 
 Symlink-target reads live in `Drive.read_link`; see
 `docs/agent-docs/drive-read-link.md`.
@@ -203,7 +214,8 @@ Extended-attribute handling lives in the xattr paths in `Drive`; see
 Visible delete requests enter through `Drive.unlink` / `Drive.rmdir`; see
 `docs/agent-docs/drive-unlink-rmdir.md`.
 
-Delete policy then flows through `Drive.delete_remote_resource`; see
+Delete policy then flows through the thin `Drive.delete_remote_resource`
+adapter and into `DriveMutations`; see
 `docs/agent-docs/drive-delete-remote-resource.md`.
 
 ## Directory And Metadata Fetching

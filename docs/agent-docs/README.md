@@ -17,9 +17,9 @@ Read these files in order:
 10. `drive-get-resource.md` for path resolution and negative-cache behavior
 11. `drive-get-metadata.md` for freshness boundaries and change-feed replay
 12. `drive-upload-path.md` for dirty-state, dispatch, and content upload flow
-13. `drive-create-remote-resource.md` for file/folder/symlink creation semantics
-14. `drive-rename.md` for move/rename semantics and cache surgery
-15. `drive-update-remote-resource.md` for shared metadata-mutation and delete flow
+13. `drive-create-remote-resource.md` for file/folder/symlink creation semantics in the extracted mutation core
+14. `drive-rename.md` for move/rename semantics and cache surgery in the extracted mutation core
+15. `drive-update-remote-resource.md` for the shared mutation-wrapper pattern used by `Drive` metadata updates and the delete/rename mutation core
 16. `drive-chmod-chown-utime.md` for the thin metadata-mutation entrypoints over `update_remote_resource`
 17. `drive-download-resource.md` for local content materialization and reuse
 18. `drive-read.md` for stream-vs-cache read policy and read-ahead behavior
@@ -52,7 +52,7 @@ Read these files in order:
 45. `drive-symlink.md` for the FUSE symlink entrypoint and create-link delegation
 46. `drive-xattr.md` for extended-attribute storage, reads, and mutations
 47. `drive-delete-remote-resource.md` for delete-vs-trash policy selection
-48. `drive-check-if-empty.md` for the folder emptiness guard used by deletion
+48. `drive-check-if-empty.md` for the folder emptiness probe used by deletion
 49. `drive-unlink-rmdir.md` for the thin FUSE delete entrypoints and `is_folder` contract
 50. `application-flow.md`
 51. `workflows.md`

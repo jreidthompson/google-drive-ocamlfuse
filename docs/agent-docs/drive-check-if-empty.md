@@ -1,9 +1,13 @@
-# `Drive.check_if_empty`
+# Delete-Path Folder Emptiness Probe
 
 ## Purpose
 
-`Drive.check_if_empty` is the folder-safety gate used before trashing or
-permanently deleting directories.
+The folder
+emptiness check exists as a production mutation port callback:
+`DriveMutationPorts.check_if_empty_remote`.
+
+That callback is the folder-safety gate used before trashing or permanently
+deleting directories inside the extracted `DriveMutations` core.
 
 Its contract is simple:
 
@@ -18,7 +22,8 @@ folders.
 ## Signature
 
 ```ocaml
-val check_if_empty : string -> bool -> bool -> unit GapiMonad.SessionM.m
+val check_if_empty_remote :
+  string -> bool -> bool -> unit GapiMonad.SessionM.m
 ```
 
 The parameters are:
@@ -27,23 +32,24 @@ The parameters are:
 - `is_folder`: whether the caller wants folder emptiness checking at all
 - `trashed`: whether the check is being performed in the trash namespace
 
-This is an internal helper. It does not resolve a visible path itself.
+This is an internal helper. It satisfies the `DriveMutations.PORTS` interface
+and does not resolve a visible path itself.
 
 ## Callers
 
 The current callers are:
 
-- `trash_resource`
-- `delete_resource`
+- `DriveMutations.trash_resource`
+- `DriveMutations.delete_resource`
 
 Both resolve the resource first, extract its `remote_id`, and then call:
 
 ```ocaml
-check_if_empty remote_id is_folder trashed
+check_if_empty_remote remote_id is_folder trashed
 ```
 
-So `check_if_empty` sits below the path-level delete policy and above the actual
-remote trash/delete request.
+So the emptiness probe sits below the path-level delete policy and above the
+actual remote trash/delete request.
 
 See `docs/agent-docs/drive-delete-remote-resource.md` for the higher-level
 delete-vs-trash branch selection.
@@ -103,7 +109,7 @@ std_params.fields = "files(id)"
 pageSize = 1
 ```
 
-So `check_if_empty` does not enumerate the whole folder. It only asks:
+So `check_if_empty_remote` does not enumerate the whole folder. It only asks:
 
 - is there at least one matching child?
 
@@ -125,8 +131,8 @@ the repository's metadata and listing paths.
 
 ## Server-Authoritative, Not Cache-Authoritative
 
-One important design point is that `check_if_empty` does not inspect the local
-cache for children. It always queries Drive.
+One important design point is that `check_if_empty_remote` does not inspect the
+local cache for children. It always queries Drive.
 
 That means:
 
@@ -158,13 +164,13 @@ caller.
 
 ## How `Directory_not_empty` Escapes
 
-`check_if_empty` does not translate its own exception.
+The probe does not translate its own exception.
 
 Instead, the exception propagates through:
 
-- `trash_resource` or `delete_resource`
-- `delete_remote_resource`
-- `unlink` or `rmdir`
+- `DriveMutations.trash_resource` or `DriveMutations.delete_resource`
+- `DriveMutations.delete_remote_resource`
+- `Drive.unlink` or `Drive.rmdir`
 - the FUSE boundary in `bin/gdfuseFuse.ml`
 
 where `Directory_not_empty` becomes `ENOTEMPTY`.
@@ -174,7 +180,7 @@ error for folder deletion.
 
 ## What It Does Not Check
 
-`check_if_empty` is deliberately narrow. It does not:
+The probe is deliberately narrow. It does not:
 
 - verify the path or resolve the resource by name
 - check read-only mode
@@ -199,7 +205,7 @@ or non-empty differently depending on whether the caller is operating:
 
 That is why `delete_remote_resource` must choose the delete/trash branch first
 and then let the lower helper pass the right `trashed` value into
-`check_if_empty`.
+`check_if_empty_remote`.
 
 ## Maintenance Notes
 
@@ -219,3 +225,11 @@ actually requires it. `pageSize = 1` and `fields = "files(id)"` are deliberate.
 If local cache cleanup or descendant bookkeeping changes elsewhere, this helper
 should usually stay server-authoritative. That is what makes it a reliable
 delete guard.
+
+## Source Pointers
+
+- `src/drive.ml`: `DriveMutationPorts.check_if_empty_remote`
+- `src/driveMutations.mli`: `PORTS.check_if_empty_remote`
+- `src/driveMutations.ml`: `trash_resource`
+- `src/driveMutations.ml`: `delete_resource`
+- `test/testDriveMutations.ml`

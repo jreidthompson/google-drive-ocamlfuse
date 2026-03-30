@@ -11,6 +11,11 @@
 It creates the remote Drive object first, then seeds the local cache with a
 `Synchronized` resource row.
 
+The public `Drive.create_remote_resource` function in `src/drive.ml` is a
+thin adapter. It builds a `DriveMutations.runtime` from `Context`, then runs
+the real implementation in `DriveMutations.Make.create_remote_resource` through
+`do_request`.
+
 This is the complementary path to the upload pipeline:
 
 - `create_remote_resource` creates the remote file/folder/symlink shell
@@ -27,6 +32,9 @@ let mkdir path mode = create_remote_resource true path mode
 let symlink target linkpath =
   create_remote_resource ~link_target:target false linkpath 0o777
 ```
+
+Those wrappers all flow through `Drive.create_remote_resource`, which then
+delegates to the extracted mutation core.
 
 See `docs/agent-docs/drive-mknod-mkdir.md` for the thin file/folder wrappers
 that delegate into this helper.
@@ -80,8 +88,8 @@ let parent_id =
   parent_resource |. CacheData.Resource.remote_id |> Option.get
 ```
 
-So `create_remote_resource` depends on the same path-resolution machinery as the
-rest of `Drive`.
+So the mutation core depends on the same path-resolution machinery and
+production helpers that `Drive` uses elsewhere.
 
 That gives it:
 
@@ -373,8 +381,10 @@ When changing this area, watch these invariants:
 ## Source Pointers
 
 - `src/drive.ml`: `create_remote_resource`
+- `src/driveMutations.ml`: `create_remote_resource`
 - `src/drive.ml`: `mknod`
 - `src/drive.ml`: `mkdir`
 - `src/drive.ml`: `symlink`
 - `src/drive.ml`: `fetch_link_target`
 - `src/drive.ml`: `read_link`
+- `test/testDriveMutations.ml`

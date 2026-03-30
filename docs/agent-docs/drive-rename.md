@@ -5,6 +5,10 @@
 `Drive.rename` implements both rename and move semantics for the mounted
 filesystem.
 
+The public `Drive.rename` function in `src/drive.ml` is a thin adapter.
+It builds the mutation runtime from `Context`, then runs the real rename logic
+in `DriveMutations.Make.rename` through `do_request`.
+
 In this codebase, that one function has to cover:
 
 - same-directory rename
@@ -15,8 +19,10 @@ In this codebase, that one function has to cover:
 - document-export name handling
 - cache cleanup after path changes
 
-This is one of the densest functions in `Drive` because it mixes remote Drive
-operations with local cache surgery.
+This is one of the densest mutation paths in the repository because it
+mixes remote Drive operations with local cache surgery. That is why the core
+logic is in `src/driveMutations.ml` instead of directly inside
+`src/drive.ml`.
 
 ## High-Level Shape
 
@@ -33,7 +39,8 @@ At a high level, `rename path new_path` does this:
 5. persist the resulting state back into the cache with custom path handling
 6. clean up tombstones and old folder cache state
 
-The implementation lives in `src/drive.ml`.
+The core implementation lives in `src/driveMutations.ml`. `src/drive.ml`
+provides the public wrapper and production ports.
 
 ## Early Namespace Guards
 
@@ -232,7 +239,8 @@ no-op.
 
 ## Shared Wrapper: `update_remote_resource`
 
-`rename` runs its remote work through `update_remote_resource`.
+`rename` runs its remote work through the mutation-core
+`update_remote_resource` helper.
 
 See `docs/agent-docs/drive-update-remote-resource.md` for the full wrapper
 contract and the other call-site patterns that reuse it.
@@ -394,7 +402,8 @@ When changing this area, watch these invariants:
 ## Source Pointers
 
 - `src/drive.ml`: `rename`
-- `src/drive.ml`: `update_remote_resource`
-- `src/drive.ml`: `trash_resource`
+- `src/driveMutations.ml`: `rename`
+- `src/driveMutations.ml`: `update_remote_resource`
 - `src/drive.ml`: `queue_upload`
 - `src/drive.ml`: `recompute_path`
+- `test/testDriveMutations.ml`

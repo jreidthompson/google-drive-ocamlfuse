@@ -16,6 +16,11 @@ request:
 
 So this function is the deletion policy switch for the mounted filesystem.
 
+The public `Drive.delete_remote_resource` function in `src/drive.ml` is a
+thin adapter. It builds the mutation runtime from `Context`, then runs the real
+branching logic in `DriveMutations.Make.delete_remote_resource` through
+`do_request`.
+
 ## Signature And Entry Points
 
 ```ocaml
@@ -53,11 +58,12 @@ so any repository exception raised below is translated into a Unix/FUSE error.
 
 At a high level, `delete_remote_resource` does this:
 
-1. read `Context` and `Config`
+1. read runtime config and delete-mode flags
 2. normalize the visible path with `get_path_in_cache`
 3. inspect the resulting `trashed` flag
 4. choose between `delete_resource` and `trash_resource`
-5. execute the chosen request through `do_request`
+5. return the chosen session action to the thin `Drive` wrapper, which executes
+   it through `do_request`
 
 In code, the decision is:
 
@@ -142,7 +148,8 @@ the two underlying helpers.
 
 ## Delegated To `trash_resource`
 
-When the trash branch is chosen, that helper still owns:
+When the trash branch is chosen, the internal `DriveMutations.trash_resource`
+helper still owns:
 
 - rejecting attempts to trash something already in the trash namespace
 - rejecting trash operations under `/lost+found`
@@ -153,7 +160,8 @@ When the trash branch is chosen, that helper still owns:
 
 ## Delegated To `delete_resource`
 
-When the permanent-delete branch is chosen, that helper still owns:
+When the permanent-delete branch is chosen, the internal
+`DriveMutations.delete_resource` helper still owns:
 
 - checking folder emptiness before deletion
 - issuing `FilesResource.delete`
@@ -228,7 +236,7 @@ on `config.delete_forever_in_trash_folder`.
 
 ### This Wrapper Has No Read-Only Guard Of Its Own
 
-Read-only enforcement happens downstream:
+Read-only enforcement happens downstream in the mutation core:
 
 - `trash_resource` and `delete_resource` both go through
   `update_remote_resource`
@@ -241,3 +249,11 @@ itself.
 
 Because the function is so small, it is easy to overlook. But any change to
 trash policy, CLI deletion modes, or trash-folder semantics belongs here first.
+
+## Source Pointers
+
+- `src/drive.ml`: `delete_remote_resource`
+- `src/driveMutations.ml`: `delete_remote_resource`
+- `src/driveMutations.ml`: `trash_resource`
+- `src/driveMutations.ml`: `delete_resource`
+- `test/testDriveMutations.ml`

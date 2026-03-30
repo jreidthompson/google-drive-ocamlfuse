@@ -72,10 +72,20 @@ The `Makefile` is only a small wrapper around these dune commands.
 - `src/drive.ml`
   - The main implementation module.
   - Contains most filesystem behavior: lookup, listing, reads, writes, upload,
-    rename, delete, xattrs, symlinks, metadata mapping, and Google Drive API
-    requests.
+    xattrs, symlinks, metadata mapping, Google Drive API requests, and the
+    production wiring for extracted mutation flows.
+  - Create/delete/rename still enter through public `Drive` functions here, but
+    those wrappers delegate into `DriveMutations` through
+    `DriveMutationPorts`.
   - If a user-visible filesystem operation changes behavior, the fix is
     probably here.
+
+- `src/driveMutations.ml`
+  - Extracted create/delete/rename core.
+  - Functorized over a narrow mutation-port boundary so those mutation paths
+    can be unit tested without real Drive, cache-file, or thread side effects.
+  - Owns the policy-heavy logic for create, delete/trash, and rename cache
+    reconciliation.
 
 ### Global Runtime State
 
@@ -168,6 +178,7 @@ Current tests are in:
 - `test/testBufferPool.ml`
 - `test/testConfigRuntime.ml`
 - `test/testConfigStore.ml`
+- `test/testDriveMutations.ml`
 - `test/testGdfuseCli.ml`
 - `test/testGdfuseFlow.ml`
 - `test/testThreadPool.ml`
@@ -187,6 +198,10 @@ There are no end-to-end tests for:
 - Google Drive API integration
 - OAuth flows
 - rename/delete semantics against live Drive state
+
+The extracted mutation core is covered by focused unit tests in
+`test/testDriveMutations.ml`, but live Drive and FUSE integration still need
+manual validation for behavior changes in those paths.
 
 Any change in those areas should be reasoned carefully and ideally verified
 manually.

@@ -1,48 +1,54 @@
-# `Drive.update_remote_resource`
+# `update_remote_resource` Wrapper Pattern
 
 ## Purpose
 
-`Drive.update_remote_resource` is the shared wrapper behind several
-path-based mutations in `Drive`.
+The repository has two closely related `update_remote_resource` wrappers:
 
-It is used when a FUSE operation needs to:
+- `Drive.update_remote_resource` in `src/drive.ml` for metadata-only mutations
+- `DriveMutations.Make.update_remote_resource` in `src/driveMutations.ml` for
+  the extracted rename/delete mutation core
+
+This document describes the shared wrapper pattern they implement.
+
+It is used when a mutation path needs to:
 
 - resolve the current resource for a visible path
 - perform one remote mutation against that resource
 - reconcile the local cache afterwards
 
-This helper is the common path for:
+Current callers are:
 
 - `utime`
-- `trash_resource`
-- `delete_resource`
-- `rename`
 - `chmod`
 - `chown`
 - `set_xattr`
 - `remove_xattr`
+- `DriveMutations.trash_resource`
+- `DriveMutations.delete_resource`
+- `DriveMutations.rename`
 
 It is not used for content uploads. Those go through the upload path centered on
 `queue_upload` and `upload_resource_with_retry`.
 
 See `docs/agent-docs/drive-upload-path.md` for content uploads and
 `docs/agent-docs/drive-rename.md` for the rename-specific cache logic built on
-top of this wrapper.
+top of the mutation-core wrapper.
 
 See `docs/agent-docs/drive-delete-remote-resource.md` for the higher-level
-policy wrapper that decides when deletion requests reach `trash_resource` versus
-`delete_resource`.
+policy wrapper that decides when deletion requests reach `trash_resource`
+versus `delete_resource`.
 
 See `docs/agent-docs/drive-chmod-chown-utime.md` for the thin public metadata
-entrypoints that use this wrapper for `utime`, `chmod`, and `chown`.
+entrypoints that use the `Drive`-side wrapper for `utime`, `chmod`, and
+`chown`.
 
 See `docs/agent-docs/drive-xattr.md` for the concrete xattr read/mutate paths
-that use this wrapper for `set_xattr` and `remove_xattr`.
+that use the `Drive`-side wrapper for `set_xattr` and `remove_xattr`.
 
-## Signature
+## Signatures
 
 ```ocaml
-val update_remote_resource :
+val Drive.update_remote_resource :
   string ->
   ?update_file_in_cache:(string -> unit) ->
   ?save_to_db:
@@ -50,21 +56,37 @@ val update_remote_resource :
   ?purge_cache:(CacheData.t -> CacheData.Resource.t -> unit) ->
   (CacheData.Resource.t -> GapiDriveV3Model.File.t option GapiMonad.SessionM.m) ->
   unit GapiMonad.SessionM.m
+
+val DriveMutations.update_remote_resource :
+  DriveMutations.runtime ->
+  string ->
+  ?save_to_db:
+    (CacheData.t -> CacheData.Resource.t -> GapiDriveV3Model.File.t -> unit) ->
+  ?purge_cache:(CacheData.t -> CacheData.Resource.t -> unit) ->
+  (CacheData.Resource.t -> GapiDriveV3Model.File.t option GapiMonad.SessionM.m) ->
+  unit GapiMonad.SessionM.m
 ```
 
-The wrapper takes the visible `path`, optional cache-reconciliation hooks, and
-one `do_remote_update` callback that performs the actual remote mutation.
+The common contract is:
+
+- take a visible `path`
+- optionally override cache-reconciliation hooks
+- run one `do_remote_update` callback that performs the remote mutation
+
+The `Drive`-side wrapper has one extra `update_file_in_cache` hook because
+`utime` may need to touch an existing local cache file after a successful
+remote metadata patch. The mutation-core wrapper does not expose that hook.
 
 ## High-Level Flow
 
-The wrapper does four things:
+The wrapper pattern does four things:
 
 1. reject the operation if the filesystem is read-only
 2. normalize the visible path with `get_path_in_cache`
 3. resolve the current resource with `get_resource`
 4. run the caller-supplied remote mutation and reconcile local cache state
 
-In outline, the implementation is:
+In outline, both implementations look like:
 
 ```ocaml
 if is_filesystem_read_only () then raise Permission_denied;
@@ -77,15 +99,17 @@ match file_option with
     save_to_db cache resource file
 ```
 
-Because the wrapper always goes through `get_resource`, it inherits the normal
+The `maybe_update_local_file` step exists only in the `Drive`-side wrapper.
+
+Because the wrappers always go through `get_resource`, they inherit the normal
 resource lookup rules:
 
 - metadata may be refreshed first through `get_metadata`
 - virtual namespaces like trash are already mapped into cache coordinates
 - stale cache rows may be refreshed before the mutation runs
 
-See `docs/agent-docs/drive-get-resource.md` for the resolution semantics this
-wrapper depends on.
+See `docs/agent-docs/drive-get-resource.md` for the resolution semantics these
+wrappers depend on.
 
 ## Read-Only Enforcement
 
@@ -95,9 +119,9 @@ The read-only guard sits at the wrapper boundary:
 if is_filesystem_read_only () then raise Permission_denied else update_file
 ```
 
-That means all current callers inherit the same policy automatically. Callers do
-not need to re-check filesystem mutability themselves before constructing the
-remote request.
+That means all current callers inherit the same policy automatically. Callers
+do not need to re-check filesystem mutability themselves before constructing
+the remote request.
 
 ## The `do_remote_update` Contract
 
@@ -121,23 +145,25 @@ Most metadata-patch operations return `Some patched_file` after a
 That includes:
 
 - `utime`
-- `trash_resource`
 - `chmod`
 - `chown`
 - `set_xattr`
 - `remove_xattr`
-- `rename`
+- `DriveMutations.trash_resource`
+- `DriveMutations.rename`
 
 ### `None`
 
-`delete_resource` returns `None` after `FilesResource.delete`.
+`DriveMutations.delete_resource` returns `None` after `FilesResource.delete`.
 
 That tells the wrapper there is no replacement metadata to save, and the local
 cache should instead be cleaned up through `purge_cache`.
 
 ## Post-Update Hooks
 
-The wrapper exposes three extension points.
+The metadata-side wrapper in `Drive` exposes three extension points. The
+mutation-core wrapper exposes the same `save_to_db` and `purge_cache` hooks,
+but not `update_file_in_cache`.
 
 ### `save_to_db`
 
@@ -161,10 +187,11 @@ This default is enough for simple in-place metadata changes such as `chmod`,
 
 More complex callers override it:
 
-- `trash_resource` marks the row trashed, invalidates the trash-bin cache, and
-  trashes cached descendants for folders
-- `rename` rewrites path and parent fields, handles replacement cases, clears
-  destination `NotFound` rows, and removes stale folder subtree entries
+- `DriveMutations.trash_resource` marks the row trashed, invalidates the
+  trash-bin cache, and trashes cached descendants for folders
+- `DriveMutations.rename` rewrites path and parent fields, handles replacement
+  cases, clears destination `NotFound` rows, and removes stale folder subtree
+  entries
 
 The key design point is that the wrapper owns the control flow, while the
 caller owns any operation-specific cache invariants.
@@ -182,7 +209,7 @@ fun cache resource -> ()
 So returning `None` without overriding `purge_cache` will leave local cache
 state untouched.
 
-`delete_resource` supplies the meaningful purge behavior:
+`DriveMutations.delete_resource` supplies the meaningful purge behavior:
 
 - remove the resource row itself
 - if deleting a folder, also remove cached descendants under the old path
@@ -191,8 +218,10 @@ That makes `None` effectively the "resource disappeared" branch.
 
 ### `update_file_in_cache`
 
-This optional hook lets a caller mutate the local cached content file after a
-successful remote metadata update.
+This optional hook exists only on `Drive.update_remote_resource`.
+
+It lets a caller mutate the local cached content file after a successful remote
+metadata update.
 
 The wrapper only invokes it when both conditions hold:
 
@@ -214,8 +243,8 @@ the file already exists locally.
 
 ## Caller Categories
 
-Although the helper is generic, its current callers fall into a small number of
-patterns.
+Although the wrapper pattern is generic, its current callers fall into a small
+number of patterns.
 
 ### In-Place Metadata Patches
 
@@ -237,8 +266,8 @@ touch the local cache file.
 
 ### Soft Delete
 
-`trash_resource` also returns `Some trashed_file`, but it cannot use the default
-save path because local cache state needs extra bookkeeping:
+`DriveMutations.trash_resource` also returns `Some trashed_file`, but it cannot
+use the default save path because local cache state needs extra bookkeeping:
 
 - mark the row trashed locally
 - invalidate the special trash-bin listing
@@ -249,7 +278,7 @@ but needs custom cache reconciliation.
 
 ### Hard Delete
 
-`delete_resource` is the pure `None` case:
+`DriveMutations.delete_resource` is the pure `None` case:
 
 - remote side-effect is `FilesResource.delete`
 - no replacement file metadata exists afterwards
@@ -257,7 +286,7 @@ but needs custom cache reconciliation.
 
 ### Move/Rename
 
-`rename` is the most complex caller.
+`DriveMutations.rename` is the most complex caller.
 
 It uses the same shared wrapper, but almost all of its correctness depends on
 the custom `save_to_db` hook rather than the wrapper itself. That hook handles:
@@ -271,7 +300,8 @@ See `docs/agent-docs/drive-rename.md` for the rename-specific details.
 
 ## Maintenance Notes
 
-There are a few non-obvious rules worth preserving if this helper changes.
+There are a few non-obvious rules worth preserving if this helper pattern
+changes.
 
 ### Path Resolution Happens Before Mutation
 
@@ -296,3 +326,10 @@ metadata will remain behind.
 
 If a future operation needs broader local file repair, it will need custom logic
 outside this hook or a change to the wrapper contract.
+
+## Source Pointers
+
+- `src/drive.ml`: `update_remote_resource`
+- `src/driveMutations.ml`: `update_remote_resource`
+- `docs/agent-docs/drive-rename.md`
+- `docs/agent-docs/drive-delete-remote-resource.md`
