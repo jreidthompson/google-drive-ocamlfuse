@@ -110,10 +110,6 @@ module Make (P : PORTS) : sig
     int ->
     unit GapiMonad.SessionM.m
 
-  val mknod : runtime -> string -> int -> unit GapiMonad.SessionM.m
-  val mkdir : runtime -> string -> int -> unit GapiMonad.SessionM.m
-  val symlink : runtime -> string -> string -> unit GapiMonad.SessionM.m
-
   val trash_resource :
     runtime -> bool -> bool -> string -> unit GapiMonad.SessionM.m
 
@@ -122,7 +118,5 @@ module Make (P : PORTS) : sig
   val delete_remote_resource :
     runtime -> bool -> string -> unit GapiMonad.SessionM.m
 
-  val unlink : runtime -> string -> unit GapiMonad.SessionM.m
-  val rmdir : runtime -> string -> unit GapiMonad.SessionM.m
   val rename : runtime -> string -> string -> unit GapiMonad.SessionM.m
 end

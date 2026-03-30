@@ -278,6 +278,19 @@ end
 
 module Mutations = DriveMutations.Make (FakePorts)
 
+let mknod runtime path mode =
+  Mutations.create_remote_resource runtime false path mode
+
+let mkdir runtime path mode =
+  Mutations.create_remote_resource runtime true path mode
+
+let symlink runtime target linkpath =
+  Mutations.create_remote_resource runtime ~link_target:target false linkpath
+    0o777
+
+let unlink runtime path = Mutations.delete_remote_resource runtime false path
+let rmdir runtime path = Mutations.delete_remote_resource runtime true path
+
 let make_resource ?(trashed = false) ?(mime_type = Drive.folder_mime_type)
     ?(name = "node") path remote_id =
   let resource = Drive.create_resource path in
@@ -305,7 +318,7 @@ let test_create_regular_file_inserts_into_cache () =
   with_reset (fun () ->
       FakePorts.add_resource (make_resource "/" "root");
       let runtime = default_runtime () in
-      run_session (Mutations.mknod runtime "/notes.txt" 0o644);
+      run_session (mknod runtime "/notes.txt" 0o644);
       assert_equal 1 (List.length !FakePorts.remote_create_calls);
       let created_file = List.hd !FakePorts.remote_create_calls in
       assert_equal "notes.txt" created_file.File.name;
@@ -324,7 +337,7 @@ let test_create_shortcut_from_relative_target () =
         (make_resource ~mime_type:Drive.folder_mime_type ~name:"target"
            "/target" "target-id");
       let runtime = default_runtime () in
-      run_session (Mutations.symlink runtime "../target" "/links/link");
+      run_session (symlink runtime "../target" "/links/link");
       let created_file = List.hd !FakePorts.remote_create_calls in
       assert_equal Drive.shortcut_mime_type created_file.File.mimeType;
       assert_equal "target-id"
@@ -335,7 +348,7 @@ let test_create_stored_symlink_for_external_target () =
       FakePorts.add_resource (make_resource "/" "root");
       FakePorts.add_resource (make_resource ~name:"links" "/links" "links-id");
       let runtime = default_runtime () in
-      run_session (Mutations.symlink runtime "/tmp/external" "/links/link");
+      run_session (symlink runtime "/tmp/external" "/links/link");
       let created_file = List.hd !FakePorts.remote_create_calls in
       assert_equal "" created_file.File.mimeType;
       assert_equal "/tmp/external"
@@ -347,7 +360,7 @@ let test_create_in_trash_is_denied () =
   with_reset (fun () ->
       let runtime = default_runtime () in
       assert_raises DriveMutations.Permission_denied (fun () ->
-          run_session (Mutations.mknod runtime "/.Trash/file.txt" 0o644)))
+          run_session (mknod runtime "/.Trash/file.txt" 0o644)))
 
 let test_delete_uses_trash_by_default () =
   with_reset (fun () ->
@@ -355,7 +368,7 @@ let test_delete_uses_trash_by_default () =
         (make_resource ~mime_type:"text/plain" ~name:"file.txt" "/file.txt"
            "file-id");
       let runtime = default_runtime () in
-      run_session (Mutations.unlink runtime "/file.txt");
+      run_session (unlink runtime "/file.txt");
       let resource = Option.get (FakePorts.find_resource "/file.txt" true) in
       assert_equal (Some true) resource.CacheData.Resource.trashed;
       assert_equal [ "file-id" ] (List.map fst !FakePorts.remote_update_calls);
@@ -368,7 +381,7 @@ let test_delete_can_skip_trash () =
         (make_resource ~mime_type:"text/plain" ~name:"file.txt" "/file.txt"
            "file-id");
       let runtime = default_runtime ~skip_trash:true () in
-      run_session (Mutations.unlink runtime "/file.txt");
+      run_session (unlink runtime "/file.txt");
       assert_equal [ "file-id" ] !FakePorts.remote_delete_calls;
       assert_bool "expected cache deletion"
         (Option.is_none (FakePorts.find_resource "/file.txt" false)))
@@ -379,7 +392,7 @@ let test_delete_non_empty_folder_is_rejected () =
       FakePorts.add_resource (make_resource ~name:"docs" "/docs" "folder-id");
       let runtime = default_runtime () in
       assert_raises DriveMutations.Directory_not_empty (fun () ->
-          run_session (Mutations.rmdir runtime "/docs")))
+          run_session (rmdir runtime "/docs")))
 
 let test_rename_within_same_parent_updates_name () =
   with_reset (fun () ->

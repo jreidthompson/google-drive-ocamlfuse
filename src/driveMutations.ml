@@ -235,12 +235,6 @@ module Make (P : PORTS) = struct
     in
     create_file
 
-  let mknod runtime path mode = create_remote_resource runtime false path mode
-  let mkdir runtime path mode = create_remote_resource runtime true path mode
-
-  let symlink runtime target linkpath =
-    create_remote_resource runtime ~link_target:target false linkpath 0o777
-
   let trash_resource runtime is_folder trashed path =
     if trashed then raise Permission_denied;
     if P.is_lost_and_found path trashed runtime.config then
@@ -311,9 +305,6 @@ module Make (P : PORTS) = struct
       || (trashed && runtime.config.delete_forever_in_trash_folder)
     then delete_resource runtime is_folder path
     else trash_resource runtime is_folder trashed path
-
-  let unlink runtime path = delete_remote_resource runtime false path
-  let rmdir runtime path = delete_remote_resource runtime true path
 
   let rename runtime path new_path =
     let path_in_cache, trashed = P.get_path_in_cache path runtime.config in
