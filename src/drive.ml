@@ -1746,16 +1746,25 @@ let drive_view_runtime () =
     mountpoint_stats = context.Context.mountpoint_stats;
   }
 
-(* stat *)
-let get_attr path =
-  do_request (ViewOps.get_attr (drive_view_runtime ()) path) |> fst
+module DriveDirectoryReadPorts = struct
+  let get_path_in_cache = get_path_in_cache
+  let get_resource = get_resource
+  let get_folder_id = get_folder_id
 
-(* END stat *)
+  let is_lost_and_found_root path trashed config =
+    is_lost_and_found_root path trashed config
 
-(* readdir *)
-let read_dir path =
-  let config = Context.get_ctx () |. Context.config_lens in
-  let get_all_files q =
+  let is_shared_with_me_root path trashed config =
+    is_shared_with_me_root path trashed config
+
+  let check_resource_in_cache cache path trashed =
+    check_resource_in_cache cache path trashed
+
+  let select_resources_with_parent_path =
+    Cache.Resource.select_resources_with_parent_path
+
+  let list_files q =
+    let config = Context.get_ctx () |. Context.config_lens in
     let rec loop ?pageToken accu =
       with_retry_default
         (FilesResource.list ~supportsAllDrives:true
@@ -1770,141 +1779,38 @@ let read_dir path =
       else loop ~pageToken:file_list.FileList.nextPageToken files
     in
     loop []
-  in
 
+  let build_resource_tables = build_resource_tables
+
+  let update_resource_from_file resource file =
+    update_resource_from_file resource file
+
+  let get_unique_filename_from_file = get_unique_filename_from_file
+  let create_resource = create_resource
+  let insert_resources = Cache.Resource.insert_resources
+  let update_cached_resource = update_cached_resource
+  let current_time = Unix.gettimeofday
+end
+
+module DirectoryReadOps = DriveDirectoryReads.Make (DriveDirectoryReadPorts)
+
+let drive_directory_read_runtime () =
   let context = Context.get_ctx () in
-  let config = context |. Context.config_lens in
-  let path_in_cache, trashed = get_path_in_cache path config in
-  let cache = context.Context.cache in
+  {
+    DriveDirectoryReads.cache = context.Context.cache;
+    config = context |. Context.config_lens;
+  }
 
-  let request_folder =
-    Utils.log_with_header
-      "BEGIN: Getting folder content (path=%s, trashed=%b)\n%!" path_in_cache
-      trashed;
-    get_resource path_in_cache trashed >>= fun resource ->
-    if is_lost_and_found_root path trashed config then (
-      Utils.log_with_header "BEGIN: Getting lost and found files\n%!";
-      let q = "'me' in owners" in
-      get_all_files q >>= fun all_owned_files ->
-      let lost_and_found_files =
-        List.filter (fun file -> file.File.parents = []) all_owned_files
-      in
-      Utils.log_with_header
-        "END: Getting lost and found files: Found %d files\n%!"
-        (List.length lost_and_found_files);
-      SessionM.return (lost_and_found_files, resource))
-    else if is_shared_with_me_root path trashed config then (
-      Utils.log_with_header "BEGIN: Getting shared with me files\n%!";
-      let q = "sharedWithMe = true" in
-      get_all_files q >>= fun shared_with_me_files ->
-      Utils.log_with_header
-        "END: Getting shared with me files: Found %d files\n%!"
-        (List.length shared_with_me_files);
-      SessionM.return (shared_with_me_files, resource))
-    else
-      get_folder_id path_in_cache trashed >>= fun folder_id ->
-      let q =
-        Printf.sprintf "'%s' in parents and trashed = %b" folder_id trashed
-      in
-      get_all_files q >>= fun files ->
-      Utils.log_with_header
-        "END: Getting folder content (path=%s, trashed=%b)\n%!" path_in_cache
-        trashed;
-      if path = trash_directory && trashed && not config.Config.disable_trash
-      then (
-        Utils.log_with_header "BEGIN: Getting explicitly trashed files\n%!";
-        let q =
-          Printf.sprintf "not '%s' in parents and trashed = true" folder_id
-        in
-        get_all_files q >>= fun trashed_files ->
-        let explicitly_trashed_files =
-          List.filter (fun file -> file.File.explicitlyTrashed) trashed_files
-        in
-        Utils.log_with_header
-          "END: Getting explicitly trashed files: Found %d files\n%!"
-          (List.length explicitly_trashed_files);
-        SessionM.return (files @ explicitly_trashed_files, resource))
-      else SessionM.return (files, resource)
-  in
+(* stat *)
+let get_attr path =
+  do_request (ViewOps.get_attr (drive_view_runtime ()) path) |> fst
 
-  let resources =
-    if check_resource_in_cache cache path_in_cache trashed then (
-      Utils.log_with_header
-        "BEGIN: Getting resources from db (parent path=%s, trashed=%b)\n%!"
-        path_in_cache trashed;
-      let resources =
-        Cache.Resource.select_resources_with_parent_path cache path_in_cache
-          trashed
-      in
-      Utils.log_with_header
-        "END: Getting resources from db (parent path=%s, trashed=%b)\n%!"
-        path_in_cache trashed;
-      resources)
-    else
-      let files, folder_resource = do_request request_folder |> fst in
-      let filename_table, remote_id_table =
-        build_resource_tables path_in_cache trashed
-      in
-      let resources_and_files =
-        List.map
-          (fun file ->
-            try
-              let cached_resource = Hashtbl.find remote_id_table file.File.id in
-              let updated_resource =
-                update_resource_from_file cached_resource file
-              in
-              (Some updated_resource, file)
-            with Not_found -> (None, file))
-          files
-      in
-      let resources =
-        List.map
-          (fun (resource, file) ->
-            match resource with
-            | Some r -> r
-            | None ->
-                let filename =
-                  get_unique_filename_from_file file filename_table
-                in
-                let resource_path = Filename.concat path_in_cache filename in
-                let resource = create_resource resource_path in
-                update_resource_from_file resource file)
-          resources_and_files
-      in
+(* END stat *)
 
-      Utils.log_with_header
-        "BEGIN: Inserting folder resources into db (trashed=%b)\n%!" trashed;
-      let inserted_resources =
-        Cache.Resource.insert_resources cache resources path_in_cache trashed
-      in
-      Utils.log_with_header
-        "END: Inserting folder resources into db (trashed=%b)\n%!" trashed;
-      let updated_resource =
-        folder_resource
-        |> CacheData.Resource.state ^= CacheData.Resource.State.Synchronized
-        |> CacheData.Resource.last_update ^= Unix.gettimeofday ()
-      in
-      update_cached_resource cache updated_resource;
-      inserted_resources
-  in
-  let filenames =
-    List.map
-      (fun resource -> Filename.basename resource.CacheData.Resource.path)
-      resources
-  in
-  let filenames =
-    if path = root_directory && not config.Config.disable_trash then
-      Filename.basename trash_directory :: filenames
-    else filenames
-  in
-  let filenames =
-    if path = root_directory && not trashed then
-      Filename.basename shared_with_me_directory :: filenames
-    else filenames
-  in
-  if path = root_directory && (not trashed) && config.Config.lost_and_found then
-    Filename.basename lost_and_found_directory :: filenames
-  else filenames
+(* readdir *)
+let read_dir path =
+  do_request (DirectoryReadOps.read_dir (drive_directory_read_runtime ()) path)
+  |> fst
 
 (* END readdir *)
 
