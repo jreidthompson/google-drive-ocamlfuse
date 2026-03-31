@@ -15,6 +15,11 @@ So `read_link` is not just a trivial field read. For shortcuts it can perform a
 target-resource lookup and update the cached source row with the reconstructed
 target path.
 
+The public `Drive.read_link` function in `src/drive.ml` is a thin
+adapter. It builds a small runtime from `Context`, then runs the real
+link-target resolution logic in `DriveViews.Make.read_link` through
+`do_request`.
+
 ## Signature And FUSE Boundary
 
 ```ocaml
@@ -45,7 +50,7 @@ That is how non-link-like resources fail when passed to `readlink`.
 4. run that request through `do_request`
 5. return the resulting string
 
-So almost all of the real behavior lives in `fetch_link_target`.
+So almost all of the real behavior lives in `DriveViews.fetch_link_target`.
 
 ## Path Normalization
 
@@ -63,7 +68,7 @@ this function.
 
 ## The Shared Helper: `fetch_link_target`
 
-`fetch_link_target path_in_cache trashed cache` is the real readlink engine.
+`fetch_link_target` inside `src/driveViews.ml` is the real readlink engine.
 
 Its first step is always:
 
@@ -252,3 +257,11 @@ Changes to `fetch_link_target` affect at least:
 
 so link-target caching and reconstruction changes must be reviewed in both
 contexts.
+
+## Source Pointers
+
+- `src/drive.ml`: `read_link`
+- `src/drive.ml`: `DriveViewPorts`
+- `src/driveViews.ml`: `read_link`
+- `src/driveViews.ml`: `fetch_link_target`
+- `test/testDriveViews.ml`

@@ -17,6 +17,11 @@ This function also doubles as a background prefetch path:
 `Drive.init_filesystem`. Any behavior change here affects both foreground
 `readdir` requests and background folder warming.
 
+The public `Drive.read_dir` function in `src/drive.ml` is a thin
+adapter. It builds a small runtime from `Context`, then runs the real
+directory-listing logic in `DriveDirectoryReads.Make.read_dir` through
+`do_request`.
+
 ## High-Level Behavior
 
 `Drive.read_dir` does three things:
@@ -25,7 +30,8 @@ This function also doubles as a background prefetch path:
 2. decide whether the cached directory snapshot is still valid
 3. either return cached children or rebuild the directory snapshot from Drive
 
-The implementation is in `src/drive.ml`.
+The core implementation is in `src/driveDirectoryReads.ml`. `src/drive.ml`
+provides the public wrapper and production ports.
 
 ## Path Normalization
 
@@ -295,10 +301,10 @@ When changing `read_dir`, watch these invariants:
 ## Source Pointers
 
 - `src/drive.ml`: `read_dir`
-- `src/drive.ml`: `get_path_in_cache`
-- `src/drive.ml`: `get_resource`
-- `src/drive.ml`: `build_resource_tables`
-- `src/drive.ml`: `get_unique_filename_from_file`
+- `src/drive.ml`: `DriveDirectoryReadPorts`
+- `src/driveDirectoryReads.ml`: `read_dir`
+- `src/driveDirectoryReads.ml`: query-selection and snapshot-rebuild flow
 - `src/cacheData.ml`: `CacheData.Resource.is_valid`
 - `src/cache.ml`: `Cache.Resource.insert_resources`
+- `test/testDriveDirectoryReads.ml`
 - `bin/gdfuseFuse.ml`: FUSE `readdir` adapter

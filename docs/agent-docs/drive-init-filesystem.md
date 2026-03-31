@@ -146,8 +146,9 @@ fun path -> read_dir path |> ignore
 ```
 
 That reuse is deliberate. Prefetching is not a separate folder-sync code path;
-it simply drives the same `Drive.read_dir` logic that a foreground `readdir`
-request would use.
+it simply drives the same public `Drive.read_dir` path that a foreground
+`readdir` request would use. That public wrapper delegates the main
+directory-refresh logic into `DriveDirectoryReads`.
 
 The folder-fetch loop repeatedly:
 
@@ -240,7 +241,7 @@ That keeps the ownership boundary simple:
 The background services started here are tightly coupled to Drive semantics:
 
 - upload queue workers eventually call Drive upload code
-- folder prefetching literally calls `Drive.read_dir`
+- folder prefetching literally calls the public `Drive.read_dir` path
 - metadata flushing supports cache mutations performed by Drive operations
 
 ## Maintenance Notes
@@ -259,6 +260,7 @@ When changing this area, check these invariants:
 ## Source Pointers
 
 - `src/drive.ml`: `init_filesystem`, `read_dir`, `upload_resource_by_id`
+- `src/driveDirectoryReads.ml`: `read_dir`
 - `src/memoryCache.ml`: flush-db thread startup and polling loop
 - `src/uploadQueue.ml`: async upload poll thread and worker pool
 - `src/backgroundFolderFetching.ml`: folder-prefetch poll thread

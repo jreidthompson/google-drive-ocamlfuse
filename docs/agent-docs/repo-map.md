@@ -73,10 +73,14 @@ The `Makefile` is only a small wrapper around these dune commands.
   - The main implementation module.
   - Contains most filesystem behavior: lookup, listing, reads, writes, upload,
     xattrs, symlinks, metadata mapping, Google Drive API requests, and the
-    production wiring for extracted mutation flows.
+    production wiring for extracted mutation and read-side flows.
   - Create/delete/rename still enter through public `Drive` functions here, but
     those wrappers delegate into `DriveMutations` through
     `DriveMutationPorts`.
+  - `get_attr`, `read_link`, and `opendir` delegate into `DriveViews`
+    through `DriveViewPorts`.
+  - `read_dir` delegates into `DriveDirectoryReads` through
+    `DriveDirectoryReadPorts`.
   - If a user-visible filesystem operation changes behavior, the fix is
     probably here.
 
@@ -86,6 +90,19 @@ The `Makefile` is only a small wrapper around these dune commands.
     can be unit tested without real Drive, cache-file, or thread side effects.
   - Owns the policy-heavy logic for create, delete/trash, and rename cache
     reconciliation.
+
+- `src/driveViews.ml`
+  - Extracted read-side view core.
+  - Owns stat synthesis, link-target reconstruction, and the lookup-only
+    `opendir` policy.
+  - Functorized over a narrow boundary so those read-side view paths can be
+    unit tested without real `Context`, files, or network calls.
+
+- `src/driveDirectoryReads.ml`
+  - Extracted directory-listing core for `read_dir`.
+  - Owns cache-hit reuse, synthetic-root listing strategy, remote query
+    selection, and snapshot rebuild/replacement.
+  - Keeps directory-listing policy separate from streaming/content-read logic.
 
 ### Global Runtime State
 
@@ -178,7 +195,9 @@ Current tests are in:
 - `test/testBufferPool.ml`
 - `test/testConfigRuntime.ml`
 - `test/testConfigStore.ml`
+- `test/testDriveDirectoryReads.ml`
 - `test/testDriveMutations.ml`
+- `test/testDriveViews.ml`
 - `test/testGdfuseCli.ml`
 - `test/testGdfuseFlow.ml`
 - `test/testThreadPool.ml`
@@ -199,9 +218,10 @@ There are no end-to-end tests for:
 - OAuth flows
 - rename/delete semantics against live Drive state
 
-The extracted mutation core is covered by focused unit tests in
-`test/testDriveMutations.ml`, but live Drive and FUSE integration still need
-manual validation for behavior changes in those paths.
+The extracted mutation and read-side cores are covered by focused unit tests in
+`test/testDriveMutations.ml`, `test/testDriveViews.ml`, and
+`test/testDriveDirectoryReads.ml`, but live Drive and FUSE integration still
+need manual validation for behavior changes in those paths.
 
 Any change in those areas should be reasoned carefully and ideally verified
 manually.

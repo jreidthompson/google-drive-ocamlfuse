@@ -13,6 +13,10 @@ fail if that lookup does not succeed.
 So this function is best understood as an existence gate for directory-open
 requests, not as a directory-listing or handle-construction step.
 
+The public `Drive.opendir` function in `src/drive.ml` is a thin adapter.
+It builds a small runtime from `Context`, runs `DriveViews.Make.opendir`
+through `do_request`, then returns `None`.
+
 ## Signature
 
 ```ocaml
@@ -49,29 +53,30 @@ The most important visible one here is:
 
 `Drive.opendir` itself does not translate exceptions directly.
 
-## Entire Implementation
+## Public Wrapper
 
-The implementation is:
+The public wrapper is:
 
 ```ocaml
 let opendir path flags =
-  let config = Context.get_ctx () |. Context.config_lens in
-  let path_in_cache, trashed = get_path_in_cache path config in
-  do_request (get_resource path_in_cache trashed) |> ignore;
+  do_request (ViewOps.opendir (drive_view_runtime ()) path) |> ignore;
   None
 ```
 
-That is the whole control flow.
+That is the whole public control flow.
 
 So `Drive.opendir` does exactly three things:
 
-1. normalize the visible path
-2. resolve the resource with `get_resource`
+1. build the small read-side runtime
+2. delegate lookup validation to `DriveViews`
 3. return `None`
+
+The core implementation lives in `src/driveViews.ml`. `src/drive.ml` provides
+the public wrapper and production ports.
 
 ## Path Normalization
 
-Like the other path-facing entrypoints, `opendir` begins with:
+Inside `DriveViews`, `opendir` begins with:
 
 ```ocaml
 let path_in_cache, trashed = get_path_in_cache path config
@@ -88,7 +93,7 @@ path translation model as later `readdir` and `getattr` calls.
 
 ## Lookup Is The Only Real Work
 
-After normalization, `opendir` runs:
+After normalization, `DriveViews.opendir` runs:
 
 ```ocaml
 do_request (get_resource path_in_cache trashed) |> ignore
@@ -206,6 +211,8 @@ It only validates that the path resolves through `get_resource`.
 ## Source Pointers
 
 - `src/drive.ml`: `opendir`
-- `src/drive.ml`: `get_path_in_cache`
-- `src/drive.ml`: `get_resource`
+- `src/drive.ml`: `DriveViewPorts`
+- `src/driveViews.ml`: `opendir`
+- `src/drive.ml`: `drive_view_runtime`
+- `test/testDriveViews.ml`
 - `bin/gdfuseFuse.ml`: `opendir`

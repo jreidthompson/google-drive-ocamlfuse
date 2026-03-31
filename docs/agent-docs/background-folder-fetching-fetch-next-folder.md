@@ -147,8 +147,9 @@ fun path -> read_dir path |> ignore
 ```
 
 That means `fetch_next_folder` does not mark folders `Synchronized` itself. The
-state transition happens only because `Drive.read_dir` owns the actual folder
-refresh logic.
+state transition happens only because the public `Drive.read_dir` path owns the
+actual folder refresh flow and delegates the main listing work into
+`DriveDirectoryReads`.
 
 So the split is:
 
@@ -204,3 +205,4 @@ It only selects one folder and invokes the installed callback.
 - `src/memoryCache.ml`: `Resource.select_next_folder_to_fetch`
 - `src/dbCache.ml`: `Resource.select_next_folder_to_fetch`
 - `src/drive.ml`: `read_dir`
+- `src/driveDirectoryReads.ml`: `read_dir`

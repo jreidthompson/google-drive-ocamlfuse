@@ -10,15 +10,20 @@ The executable mounts a FUSE filesystem whose operations are implemented in
 - Google Drive API calls through `gapi-ocaml`
 - background work such as uploads and folder prefetching
 
-The mutation-heavy create/delete/rename paths are split slightly
-differently from the read and upload paths:
+The mutation-heavy create/delete/rename paths and the read-side view/listing
+paths are split slightly differently from the content-read and upload paths:
 
 - `Drive` is the public FUSE-facing module
 - `src/driveMutations.ml` holds the extracted mutation core for
   create/delete/rename policy and cache reconciliation
+- `src/driveViews.ml` holds the extracted read-side view core for `get_attr`,
+  `read_link`, and the lookup portion of `opendir`
+- `src/driveDirectoryReads.ml` holds the extracted directory-listing core for
+  `read_dir`
 - `src/drive.ml` provides the production `DriveMutationPorts` implementation,
-  builds the mutation runtime from `Context`, and executes those mutation
-  sessions through `Oauth2.do_request`
+  `DriveViewPorts`, and `DriveDirectoryReadPorts`, builds the small runtimes
+  from `Context`, and executes those extracted sessions through
+  `Oauth2.do_request`
 
 The design is stateful. A global `Context.t` stores the current config, state,
 cache handle, memory buffers, locks, and background threads.
@@ -181,7 +186,8 @@ Retry handling is split:
 Open-time file access validation lives in `Drive.fopen`; see
 `docs/agent-docs/drive-fopen.md`.
 
-Directory-open validation lives in `Drive.opendir`; see
+Directory-open validation lives in the thin `Drive.opendir` wrapper over
+`DriveViews`; see
 `docs/agent-docs/drive-opendir.md`.
 
 The directory-side `releasedir` / `fsyncdir` callbacks remain adapter-level
@@ -195,14 +201,16 @@ Metadata-only `utime` / `chmod` / `chown` requests enter through thin wrappers
 over `Drive.update_remote_resource`; see
 `docs/agent-docs/drive-chmod-chown-utime.md`.
 
-Path-level stat synthesis lives in `Drive.get_attr`; see
+Path-level stat synthesis lives in the thin `Drive.get_attr` wrapper over
+`DriveViews`; see
 `docs/agent-docs/drive-get-attr.md`.
 
 Regular file and folder creation requests enter through `Drive.mknod` /
 `Drive.mkdir`; the public wrappers then flow into the extracted mutation core.
 See `docs/agent-docs/drive-mknod-mkdir.md`.
 
-Symlink-target reads live in `Drive.read_link`; see
+Symlink-target reads live in the thin `Drive.read_link` wrapper over
+`DriveViews`; see
 `docs/agent-docs/drive-read-link.md`.
 
 Symlink creation requests enter through `Drive.symlink`; see
@@ -220,7 +228,8 @@ adapter and into `DriveMutations`; see
 
 ## Directory And Metadata Fetching
 
-`Drive.read_dir` is the main listing path.
+`Drive.read_dir` is the public listing path, but the main listing logic
+lives in `DriveDirectoryReads`.
 
 It:
 

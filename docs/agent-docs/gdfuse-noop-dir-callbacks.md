@@ -148,8 +148,7 @@ logic beyond logging.
 
 `opendir` is the active directory-open gate:
 
-- it normalizes the path
-- it resolves the resource
+- it delegates lookup validation to `DriveViews`
 - it returns `None`
 
 These no-op callbacks are its post-open siblings at the FUSE boundary.

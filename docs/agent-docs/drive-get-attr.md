@@ -20,6 +20,10 @@ This means `get_attr` defines much of the visible filesystem behavior for:
 It also contains one important side effect: for some documents it may
 materialize local content first so stat data can come from the exported file.
 
+The public `Drive.get_attr` function in `src/drive.ml` is a thin adapter.
+It builds a small runtime from `Context`, then runs the real stat-synthesis
+logic in `DriveViews.Make.get_attr` through `do_request`.
+
 ## Signature And FUSE Boundary
 
 ```ocaml
@@ -49,6 +53,9 @@ At a high level, `get_attr` does this:
    file state, and mountpoint defaults
 
 The function returns one fully built `Unix.LargeFile.stats` value.
+
+The core implementation lives in `src/driveViews.ml`. `src/drive.ml` provides
+the public wrapper and production ports.
 
 ## Virtual-Root Shortcuts
 
@@ -109,12 +116,9 @@ if CacheData.Resource.is_document resource && config.Config.download_docs then
 else SessionM.return ""
 ```
 
-When this branch is taken, it does:
-
-1. `flush_memory_buffers resource`
-2. `with_retry download_resource resource`
-
-and returns the resulting `content_path`.
+In production, that branch delegates to `DriveViewPorts.materialize_for_stat`,
+which flushes memory buffers and then runs the normal download/materialization
+path. The result is the optional `content_path`.
 
 So `getattr` can trigger document export or local representation generation just
 to compute stat data.
@@ -394,3 +398,11 @@ Even when a local `stat` exists, not every field comes from it.
 
 If `link_target` is missing, `fetch_link_target` resolves it and stores it back
 into the cached resource row while answering the stat request.
+
+## Source Pointers
+
+- `src/drive.ml`: `get_attr`
+- `src/drive.ml`: `DriveViewPorts`
+- `src/driveViews.ml`: `get_attr`
+- `src/driveViews.ml`: `fetch_link_target`
+- `test/testDriveViews.ml`
