@@ -9,7 +9,7 @@ Read these files in order:
 2. `architecture.md`
 3. `gdfuse-fuse-boundary.md` for the adapter layer that maps `Drive` exceptions to Unix/FUSE errors
 4. `drive-init-filesystem.md` for the first FUSE filesystem implementation note
-5. `drive-read-dir.md` for directory listing, cache refresh, and virtual roots in the extracted directory-read core
+5. `drive-read-dir.md` for directory listing, cache refresh, and virtual roots in the directory-read core
 6. `background-folder-fetching-start-thread.md` for the startup boundary of background folder prefetching
 7. `background-folder-fetching-fetch-next-folder.md` for the runtime folder-selection and callback step in background prefetching
 8. `background-folder-fetching-folder-fetch.md` for the polling cadence, stop checks, and failure boundary around background prefetching
@@ -17,8 +17,8 @@ Read these files in order:
 10. `drive-get-resource.md` for path resolution and negative-cache behavior
 11. `drive-get-metadata.md` for freshness boundaries and change-feed replay
 12. `drive-upload-path.md` for dirty-state, dispatch, and content upload flow
-13. `drive-create-remote-resource.md` for file/folder/symlink creation semantics in the extracted mutation core
-14. `drive-rename.md` for move/rename semantics and cache surgery in the extracted mutation core
+13. `drive-create-remote-resource.md` for file/folder/symlink creation semantics in the mutation core
+14. `drive-rename.md` for move/rename semantics and cache surgery in the mutation core
 15. `drive-update-remote-resource.md` for the shared mutation-wrapper pattern used by `Drive` metadata updates and the delete/rename mutation core
 16. `drive-chmod-chown-utime.md` for the thin metadata-mutation entrypoints over `update_remote_resource`
 17. `drive-download-resource.md` for local content materialization and reuse
@@ -43,11 +43,11 @@ Read these files in order:
 36. `drive-upload.md` for the actual `FilesResource.update` upload attempt and cache reconciliation
 37. `drive-flush-fsync-release.md` for the file-close/sync callbacks that trigger upload dispatch
 38. `drive-fopen.md` for open-time access validation and write-permission checks
-39. `drive-opendir.md` for directory-open validation in the extracted read-side view core
+39. `drive-opendir.md` for directory-open validation in the read-side view core
 40. `gdfuse-noop-dir-callbacks.md` for the adapter-level `releasedir` / `fsyncdir` no-op hooks
 41. `drive-statfs.md` for filesystem-wide quota reporting and synthetic `statvfs` fields
-42. `drive-get-attr.md` for stat synthesis, virtual roots, and visible metadata policy in the extracted read-side view core
-43. `drive-read-link.md` for symlink/shortcut target resolution and cache fill in the extracted read-side view core
+42. `drive-get-attr.md` for stat synthesis, virtual roots, and visible metadata policy in the read-side view core
+43. `drive-read-link.md` for symlink/shortcut target resolution and cache fill in the read-side view core
 44. `drive-mknod-mkdir.md` for the thin file/folder creation entrypoints over `create_remote_resource`
 45. `drive-symlink.md` for the FUSE symlink entrypoint and create-link delegation
 46. `drive-xattr.md` for extended-attribute storage, reads, and mutations
@@ -58,6 +58,6 @@ Read these files in order:
 51. `workflows.md`
 52. `config-file-handling.md` for config-format and parser refactors
 
-The existing user-facing docs under `docs/wiki/` are still the source for
-installation, authorization, and end-user configuration details. The files in
-`docs/agent-docs/` are focused on implementation and maintenance.
+The user-facing docs under `docs/wiki/` are the source for installation,
+authorization, and end-user configuration details. The files in
+`docs/agent-docs/` focus on implementation and maintenance.

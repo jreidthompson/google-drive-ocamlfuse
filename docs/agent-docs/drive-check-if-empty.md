@@ -7,7 +7,7 @@ emptiness check exists as a production mutation port callback:
 `DriveMutationPorts.check_if_empty_remote`.
 
 That callback is the folder-safety gate used before trashing or permanently
-deleting directories inside the extracted `DriveMutations` core.
+deleting directories inside `DriveMutations`.
 
 Its contract is simple:
 

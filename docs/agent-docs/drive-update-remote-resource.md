@@ -6,7 +6,7 @@ The repository has two closely related `update_remote_resource` wrappers:
 
 - `Drive.update_remote_resource` in `src/drive.ml` for metadata-only mutations
 - `DriveMutations.Make.update_remote_resource` in `src/driveMutations.ml` for
-  the extracted rename/delete mutation core
+  the rename/delete mutation paths
 
 This document describes the shared wrapper pattern they implement.
 

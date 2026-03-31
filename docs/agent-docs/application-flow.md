@@ -69,7 +69,7 @@ Important behavior:
 ### Library Flow
 
 [gdfuseFlow.ml](/home/alex/src/google-drive-ocamlfuse/src/gdfuseFlow.ml) owns
-the orchestration logic (that used to live directly under `bin/`).
+the orchestration logic.
 
 Its public entrypoints are:
 
@@ -86,7 +86,7 @@ It is functorized over `DEPS`, but the boundary is intentionally coarse:
 - `Cache`: cache lifecycle hooks and clean-shutdown flags
 - `Fuse`: start-filesystem handoff
 
-`AppDir`, `ConfigStore`, `Context.StateFileStore`, and `Context` are still used
+`AppDir`, `ConfigStore`, `Context.StateFileStore`, and `Context` are
 directly. Tests rely on the real in-memory `Context` and clean it up between
 cases.
 

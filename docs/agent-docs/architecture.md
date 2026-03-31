@@ -11,18 +11,17 @@ The executable mounts a FUSE filesystem whose operations are implemented in
 - background work such as uploads and folder prefetching
 
 The mutation-heavy create/delete/rename paths and the read-side view/listing
-paths are split slightly differently from the content-read and upload paths:
+paths are separated from the content-read and upload paths:
 
 - `Drive` is the public FUSE-facing module
-- `src/driveMutations.ml` holds the extracted mutation core for
-  create/delete/rename policy and cache reconciliation
-- `src/driveViews.ml` holds the extracted read-side view core for `get_attr`,
+- `src/driveMutations.ml` holds the mutation core for create/delete/rename
+  policy and cache reconciliation
+- `src/driveViews.ml` holds the read-side view core for `get_attr`,
   `read_link`, and the lookup portion of `opendir`
-- `src/driveDirectoryReads.ml` holds the extracted directory-listing core for
-  `read_dir`
+- `src/driveDirectoryReads.ml` holds the directory-listing core for `read_dir`
 - `src/drive.ml` provides the production `DriveMutationPorts` implementation,
   `DriveViewPorts`, and `DriveDirectoryReadPorts`, builds the small runtimes
-  from `Context`, and executes those extracted sessions through
+  from `Context`, and executes those sessions through
   `Oauth2.do_request`
 
 The design is stateful. A global `Context.t` stores the current config, state,
@@ -206,7 +205,7 @@ Path-level stat synthesis lives in the thin `Drive.get_attr` wrapper over
 `docs/agent-docs/drive-get-attr.md`.
 
 Regular file and folder creation requests enter through `Drive.mknod` /
-`Drive.mkdir`; the public wrappers then flow into the extracted mutation core.
+`Drive.mkdir`; the public wrappers then flow into the mutation core.
 See `docs/agent-docs/drive-mknod-mkdir.md`.
 
 Symlink-target reads live in the thin `Drive.read_link` wrapper over
@@ -402,8 +401,8 @@ browser/auth side effects are supplied by `GdfuseRuntimeDeps`.
 
 ## Flow Testability
 
-The application flow is now unit testable from `test/` because it was moved
-from executable-private modules under `bin/` into library modules under `src/`.
+The application flow is unit testable from `test/` through the library-visible
+modules in `src/`.
 
 The testing approach is intentionally mixed:
 

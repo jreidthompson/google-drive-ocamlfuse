@@ -198,10 +198,10 @@ Manual testing matters for:
 ## Known Structural Constraints
 
 - `src/drive.ml` is large and central; many changes are cross-cutting.
-- The codebase still relies on mutable global `Context` for runtime state.
-- Application startup/shutdown now has a narrow dependency-injection boundary
-  through `GdfuseFlow.Make`, but the rest of the filesystem path is still
-  largely concrete.
+- The codebase relies on mutable global `Context` for runtime state.
+- Application startup/shutdown has a narrow dependency-injection boundary
+  through `GdfuseFlow.Make`, but the rest of the filesystem path is largely
+  concrete.
 - A lot of metadata is mirrored both in cache and in Drive app properties.
 - Threading is real; this is not a purely single-threaded FUSE wrapper.
 

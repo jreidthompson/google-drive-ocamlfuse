@@ -34,7 +34,7 @@ let symlink target linkpath =
 ```
 
 Those wrappers all flow through `Drive.create_remote_resource`, which then
-delegates to the extracted mutation core.
+delegates to the mutation core.
 
 See `docs/agent-docs/drive-mknod-mkdir.md` for the thin file/folder wrappers
 that delegate into this helper.
