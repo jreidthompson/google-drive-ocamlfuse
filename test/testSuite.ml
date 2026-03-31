@@ -9,6 +9,7 @@ let _ =
            TestGdfuseCli.suite;
            TestGdfuseFlow.suite;
            TestDriveMutations.suite;
+           TestDriveViews.suite;
            TestBuffering.suite;
            TestThreadPool.suite;
            TestBufferPool.suite;

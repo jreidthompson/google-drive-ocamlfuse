@@ -1718,165 +1718,37 @@ let is_file_read_only resource =
   || config.Config.large_file_read_only
      && CacheData.Resource.is_large_file config resource
 
-let fetch_link_target path_in_cache trashed cache =
-  let mountpoint_path = Context.get_ctx () |. Context.mountpoint_path in
-  get_resource path_in_cache trashed >>= fun resource ->
-  match resource.CacheData.Resource.link_target with
-  | None -> (
-      match resource.CacheData.Resource.target_id with
-      | None -> raise Invalid_operation
-      | Some tid ->
-          get_resource_with_id tid cache >>= fun link_resource ->
-          let link_target =
-            (if ExtString.String.ends_with mountpoint_path Filename.dir_sep then
-               Filename.chop_suffix mountpoint_path Filename.dir_sep
-             else mountpoint_path)
-            ^ link_resource.CacheData.Resource.path
-          in
-          let updated_resource =
-            resource |> CacheData.Resource.link_target ^= Some link_target
-          in
-          update_cached_resource cache updated_resource;
-          SessionM.return link_target)
-  | Some link_target -> SessionM.return link_target
+module DriveViewPorts = struct
+  let get_path_in_cache = get_path_in_cache
+  let get_resource = get_resource
+  let get_resource_with_id = get_resource_with_id
+  let update_cached_resource = update_cached_resource
+
+  let materialize_for_stat resource =
+    flush_memory_buffers resource;
+    with_retry download_resource resource
+
+  let file_exists = Sys.file_exists
+  let stat_file = Unix.LargeFile.stat
+  let is_file_read_only = is_file_read_only
+  let is_lost_and_found_root = is_lost_and_found_root
+  let is_shared_with_me_root = is_shared_with_me_root
+end
+
+module ViewOps = DriveViews.Make (DriveViewPorts)
+
+let drive_view_runtime () =
+  let context = Context.get_ctx () in
+  {
+    DriveViews.cache = context.Context.cache;
+    config = context |. Context.config_lens;
+    mountpoint_path = context.Context.mountpoint_path;
+    mountpoint_stats = context.Context.mountpoint_stats;
+  }
 
 (* stat *)
 let get_attr path =
-  let context = Context.get_ctx () in
-  let config = context |. Context.config_lens in
-  let cache = context.Context.cache in
-  let path_in_cache, trashed = get_path_in_cache path config in
-
-  let request_resource =
-    get_resource path_in_cache trashed >>= fun resource ->
-    (if CacheData.Resource.is_document resource && config.Config.download_docs
-     then
-       Utils.try_with_m
-         (flush_memory_buffers resource;
-          with_retry download_resource resource)
-         (function
-           | File_not_found -> SessionM.return "" | e -> Utils.raise_m e)
-     else SessionM.return "")
-    >>= fun content_path -> SessionM.return (resource, content_path)
-  in
-
-  if path = root_directory then context.Context.mountpoint_stats
-  else if
-    (path = trash_directory && not config.Config.disable_trash)
-    || is_shared_with_me_root path trashed config
-  then
-    let stats = context.Context.mountpoint_stats in
-    {
-      stats with
-      Unix.LargeFile.st_perm = stats.Unix.LargeFile.st_perm land 0o555;
-    }
-  else if is_lost_and_found_root path trashed config then
-    context.Context.mountpoint_stats
-  else
-    let resource, content_path = do_request request_resource |> fst in
-    let stat =
-      if content_path <> "" && Sys.file_exists content_path then
-        Some (Unix.LargeFile.stat content_path)
-      else None
-    in
-    let st_kind =
-      if CacheData.Resource.is_folder resource then Unix.S_DIR
-      else if CacheData.Resource.is_shortcut resource then Unix.S_LNK
-      else
-        Option.map_default CacheData.Resource.file_mode_bits_to_kind Unix.S_REG
-          resource.CacheData.Resource.file_mode_bits
-    in
-    let st_perm =
-      let default_perm =
-        if CacheData.Resource.is_folder resource then 0o777 else 0o666
-      in
-      let perm =
-        Option.map_default CacheData.Resource.file_mode_bits_to_perm
-          default_perm resource.CacheData.Resource.file_mode_bits
-      in
-      let mask =
-        if
-          CacheData.Resource.is_symlink resource
-          || CacheData.Resource.is_shortcut resource
-        then 0o777
-        else
-          lnot config.Config.umask
-          land if is_file_read_only resource then 0o555 else 0o777
-      in
-      perm land mask
-    in
-    (* To avoid potential performance issues, counting the number of subdirs
-     * (as st_nlink is usually equals to 2 + subdir number), let set the value
-     * to 1, as it can be used to mean "I don't know the subdirectory count"
-     * (https://github.com/cryptomator/fuse-nio-adapter/issues/34). See also:
-     * https://bugzilla.kernel.org/show_bug.cgi?id=196405#c5
-     *)
-    let st_nlink = 1 in
-    let st_uid =
-      Option.map_default Int64.to_int
-        context.Context.mountpoint_stats.Unix.LargeFile.st_uid
-        resource.CacheData.Resource.uid
-    in
-    let st_gid =
-      Option.map_default Int64.to_int
-        context.Context.mountpoint_stats.Unix.LargeFile.st_gid
-        resource.CacheData.Resource.gid
-    in
-    let st_size =
-      if
-        CacheData.Resource.is_symlink resource
-        || CacheData.Resource.is_shortcut resource
-      then
-        let link_target =
-          match resource.CacheData.Resource.link_target with
-          | None -> (
-              match resource.CacheData.Resource.target_id with
-              | None -> raise Invalid_operation
-              | Some _ ->
-                  let fetch_link_target =
-                    fetch_link_target path_in_cache trashed cache
-                  in
-                  do_request fetch_link_target |> fst)
-          | Some l -> l
-        in
-        link_target |> String.length |> Int64.of_int
-      else
-        match stat with
-        | None ->
-            if CacheData.Resource.is_folder resource then f_bsize
-            else Option.default 0L resource.CacheData.Resource.size
-        | Some st -> st.Unix.LargeFile.st_size
-    in
-    let st_atime =
-      match stat with
-      | None -> resource.CacheData.Resource.viewed_by_me_time |> Option.get
-      | Some st -> st.Unix.LargeFile.st_atime
-    in
-    let is_to_upload =
-      resource.CacheData.Resource.state = CacheData.Resource.State.ToUpload
-    in
-    let st_mtime =
-      match stat with
-      | Some st when is_to_upload -> st.Unix.LargeFile.st_mtime
-      | _ -> resource.CacheData.Resource.modified_time |> Option.get
-    in
-    let st_ctime =
-      match stat with
-      | Some st when is_to_upload -> st.Unix.LargeFile.st_ctime
-      | _ -> st_mtime
-    in
-    {
-      context.Context.mountpoint_stats with
-      Unix.LargeFile.st_kind;
-      st_perm;
-      st_nlink;
-      st_uid;
-      st_gid;
-      st_size;
-      st_atime;
-      st_mtime;
-      st_ctime;
-    }
+  do_request (ViewOps.get_attr (drive_view_runtime ()) path) |> fst
 
 (* END stat *)
 
@@ -2058,9 +1930,7 @@ let fopen path flags =
 
 (* opendir *)
 let opendir path flags =
-  let config = Context.get_ctx () |. Context.config_lens in
-  let path_in_cache, trashed = get_path_in_cache path config in
-  do_request (get_resource path_in_cache trashed) |> ignore;
+  do_request (ViewOps.opendir (drive_view_runtime ()) path) |> ignore;
   None
 
 (* END opendir *)
@@ -2738,12 +2608,7 @@ let remove_xattr path name =
 
 (* readlink *)
 let read_link path =
-  let context = Context.get_ctx () in
-  let config = context |. Context.config_lens in
-  let cache = context.Context.cache in
-  let path_in_cache, trashed = get_path_in_cache path config in
-  let fetch_link_target = fetch_link_target path_in_cache trashed cache in
-  do_request fetch_link_target |> fst
+  do_request (ViewOps.read_link (drive_view_runtime ()) path) |> fst
 
 (* END readlink *)
 
