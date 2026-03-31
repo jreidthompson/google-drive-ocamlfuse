@@ -270,7 +270,6 @@ the record shape.
 
 - existing resources resolve successfully
 - missing resources propagate the same lookup failure as today
-- flags are ignored
 
 ## Candidate Second Slice: `DriveDirectoryReads`
 

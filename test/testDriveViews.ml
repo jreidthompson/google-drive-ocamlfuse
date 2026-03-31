@@ -50,10 +50,12 @@ module FakePorts = struct
   let resources = Hashtbl.create 32
   let stats_by_path = Hashtbl.create 16
   let updated_resources = ref []
+  let resource_with_id_lookups = ref []
   let materialize_response = ref (Return "")
 
   let reset () =
     updated_resources := [];
+    resource_with_id_lookups := [];
     materialize_response := Return "";
     Hashtbl.reset resources;
     Hashtbl.reset stats_by_path
@@ -85,6 +87,7 @@ module FakePorts = struct
     | None -> Utils.raise_m Drive.File_not_found
 
   let get_resource_with_id remote_id _cache =
+    resource_with_id_lookups := !resource_with_id_lookups @ [ remote_id ];
     match find_by_remote_id remote_id with
     | Some resource -> SessionM.return resource
     | None -> Utils.raise_m Drive.File_not_found
@@ -168,7 +171,62 @@ let test_read_link_stored_symlink_uses_cached_target () =
   let runtime = default_runtime () in
   let link_target = run_session (Views.read_link runtime "/link") in
   assert_equal "../target" link_target;
+  assert_equal [] !FakePorts.resource_with_id_lookups;
   assert_equal [] !FakePorts.updated_resources
+
+let test_read_link_shortcut_with_cached_target_avoids_extra_lookup () =
+  FakePorts.reset ();
+  let source =
+    make_resource ~remote_id:"rid-shortcut"
+      ~mime_type:Drive.shortcut_mime_type ~link_target:"/mnt/gd/already-known"
+      ~target_id:"rid-target" "/shortcut"
+  in
+  FakePorts.add_resource source;
+  let runtime = default_runtime () in
+  let link_target = run_session (Views.read_link runtime "/shortcut") in
+  assert_equal "/mnt/gd/already-known" link_target;
+  assert_equal [] !FakePorts.resource_with_id_lookups;
+  assert_equal [] !FakePorts.updated_resources
+
+let test_read_link_non_link_resource_is_invalid () =
+  FakePorts.reset ();
+  let resource =
+    make_resource ~remote_id:"rid-file" ~mime_type:"text/plain" "/file.txt"
+  in
+  FakePorts.add_resource resource;
+  let runtime = default_runtime () in
+  assert_raises Drive.Invalid_operation (fun () ->
+      run_session (Views.read_link runtime "/file.txt"))
+
+let test_get_attr_root_returns_mountpoint_stats_unchanged () =
+  FakePorts.reset ();
+  let runtime = default_runtime () in
+  let stat = run_session (Views.get_attr runtime "/") in
+  assert_equal base_mountpoint_stats.Unix.LargeFile.st_kind
+    stat.Unix.LargeFile.st_kind;
+  assert_equal base_mountpoint_stats.Unix.LargeFile.st_perm
+    stat.Unix.LargeFile.st_perm;
+  assert_equal base_mountpoint_stats.Unix.LargeFile.st_uid
+    stat.Unix.LargeFile.st_uid;
+  assert_equal base_mountpoint_stats.Unix.LargeFile.st_gid
+    stat.Unix.LargeFile.st_gid
+
+let test_get_attr_shared_root_is_mountpoint_read_only () =
+  FakePorts.reset ();
+  let runtime = default_runtime () in
+  let stat = run_session (Views.get_attr runtime "/.shared") in
+  assert_equal Unix.S_DIR stat.Unix.LargeFile.st_kind;
+  assert_equal 0o555 stat.Unix.LargeFile.st_perm
+
+let test_get_attr_lost_and_found_root_uses_mountpoint_stats () =
+  FakePorts.reset ();
+  let config = { Config.default with lost_and_found = true } in
+  let runtime = default_runtime ~config () in
+  let stat = run_session (Views.get_attr runtime "/lost+found") in
+  assert_equal base_mountpoint_stats.Unix.LargeFile.st_kind
+    stat.Unix.LargeFile.st_kind;
+  assert_equal base_mountpoint_stats.Unix.LargeFile.st_perm
+    stat.Unix.LargeFile.st_perm
 
 let test_get_attr_regular_file_masks_permissions () =
   FakePorts.reset ();
@@ -185,6 +243,18 @@ let test_get_attr_regular_file_masks_permissions () =
   assert_equal 123L stat.Unix.LargeFile.st_size;
   assert_equal 1000 stat.Unix.LargeFile.st_uid;
   assert_equal 1000 stat.Unix.LargeFile.st_gid
+
+let test_get_attr_folder_uses_directory_kind_and_fallback_size () =
+  FakePorts.reset ();
+  let resource =
+    make_resource ~remote_id:"rid-folder" ~mime_type:Drive.folder_mime_type
+      "/folder"
+  in
+  FakePorts.add_resource resource;
+  let runtime = default_runtime () in
+  let stat = run_session (Views.get_attr runtime "/folder") in
+  assert_equal Unix.S_DIR stat.Unix.LargeFile.st_kind;
+  assert_equal 4096L stat.Unix.LargeFile.st_size
 
 let test_get_attr_shortcut_uses_resolved_target_length () =
   FakePorts.reset ();
@@ -204,6 +274,20 @@ let test_get_attr_shortcut_uses_resolved_target_length () =
   assert_equal
     (Int64.of_int (String.length "/mnt/gd/folder/file.txt"))
     stat.Unix.LargeFile.st_size
+
+let test_get_attr_stored_symlink_uses_target_length () =
+  FakePorts.reset ();
+  let resource =
+    make_resource ~remote_id:"rid-link" ~mime_type:"text/plain"
+      ~link_target:"../target" ~file_mode_bits:(Int64.of_int 0o120777) "/link"
+  in
+  FakePorts.add_resource resource;
+  let runtime = default_runtime () in
+  let stat = run_session (Views.get_attr runtime "/link") in
+  assert_equal Unix.S_LNK stat.Unix.LargeFile.st_kind;
+  assert_equal (Int64.of_int (String.length "../target"))
+    stat.Unix.LargeFile.st_size;
+  assert_equal [] !FakePorts.resource_with_id_lookups
 
 let test_get_attr_document_ignores_file_not_found_from_materialization () =
   FakePorts.reset ();
@@ -235,6 +319,12 @@ let test_opendir_uses_lookup_only () =
   let runtime = default_runtime () in
   run_session (Views.opendir runtime "/dir")
 
+let test_opendir_missing_path_propagates_lookup_failure () =
+  FakePorts.reset ();
+  let runtime = default_runtime () in
+  assert_raises Drive.File_not_found (fun () ->
+      run_session (Views.opendir runtime "/missing"))
+
 let suite =
   "DriveViews test"
   >::: [
@@ -242,13 +332,29 @@ let suite =
          >:: test_read_link_shortcut_reconstructs_and_caches_target;
          "test_read_link_stored_symlink_uses_cached_target"
          >:: test_read_link_stored_symlink_uses_cached_target;
+         "test_read_link_shortcut_with_cached_target_avoids_extra_lookup"
+         >:: test_read_link_shortcut_with_cached_target_avoids_extra_lookup;
+         "test_read_link_non_link_resource_is_invalid"
+         >:: test_read_link_non_link_resource_is_invalid;
+         "test_get_attr_root_returns_mountpoint_stats_unchanged"
+         >:: test_get_attr_root_returns_mountpoint_stats_unchanged;
+         "test_get_attr_shared_root_is_mountpoint_read_only"
+         >:: test_get_attr_shared_root_is_mountpoint_read_only;
+         "test_get_attr_lost_and_found_root_uses_mountpoint_stats"
+         >:: test_get_attr_lost_and_found_root_uses_mountpoint_stats;
          "test_get_attr_regular_file_masks_permissions"
          >:: test_get_attr_regular_file_masks_permissions;
+         "test_get_attr_folder_uses_directory_kind_and_fallback_size"
+         >:: test_get_attr_folder_uses_directory_kind_and_fallback_size;
          "test_get_attr_shortcut_uses_resolved_target_length"
          >:: test_get_attr_shortcut_uses_resolved_target_length;
+         "test_get_attr_stored_symlink_uses_target_length"
+         >:: test_get_attr_stored_symlink_uses_target_length;
          "test_get_attr_document_ignores_file_not_found_from_materialization"
          >:: test_get_attr_document_ignores_file_not_found_from_materialization;
          "test_get_attr_trash_root_is_mountpoint_read_only"
          >:: test_get_attr_trash_root_is_mountpoint_read_only;
          "test_opendir_uses_lookup_only" >:: test_opendir_uses_lookup_only;
+         "test_opendir_missing_path_propagates_lookup_failure"
+         >:: test_opendir_missing_path_propagates_lookup_failure;
        ]
