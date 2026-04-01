@@ -11,3 +11,6 @@
   external dependencies.
 - `drive-testing-refactor/plan.md`: archived completed plan for extracting the
   `DriveMutations` core and making `Drive` mutation paths unit testable.
+- `drive-read-path-extraction/plan.md`: archived completed plan for extracting
+  `DriveViews` and `DriveDirectoryReads` and making the read-side view and
+  directory-listing paths unit testable.

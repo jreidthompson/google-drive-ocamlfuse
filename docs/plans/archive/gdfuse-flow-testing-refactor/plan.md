@@ -1,4 +1,6 @@
-# Plan: Make `gdfuse` Application Flow Unit-Testable
+# Archived Plan: Make `gdfuse` Application Flow Unit-Testable
+
+Archived after implementation.
 
 ## Summary
 

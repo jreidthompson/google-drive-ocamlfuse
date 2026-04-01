@@ -1,4 +1,6 @@
-# OToml Config Implementation Checklist
+# Archived checklist: OToml Config Implementation Checklist
+
+Archived after implementation.
 
 ## Purpose
 

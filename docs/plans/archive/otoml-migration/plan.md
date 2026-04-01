@@ -1,4 +1,6 @@
-# OToml Configuration Migration Plan
+# Archived Plan: OToml Configuration Migration Plan
+
+Archived after implementation.
 
 ## Goal
 

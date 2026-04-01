@@ -1,4 +1,6 @@
-# Plan: Refactor `gdfuse.ml` For Readability
+# Archived Plan: Refactor `gdfuse.ml` For Readability
+
+Archived after implementation.
 
 ## Summary
 

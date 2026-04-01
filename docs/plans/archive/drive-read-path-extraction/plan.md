@@ -1,4 +1,10 @@
-# Plan: Extract Testable Read-Side View Paths From `Drive`
+# Archived Plan: Extract Testable Read-Side View Paths From `Drive`
+
+Archived after implementation.
+
+This plan was completed by extracting `DriveViews` for `get_attr`,
+`read_link`, and `opendir`, then extracting `DriveDirectoryReads` for
+`read_dir`, while keeping content read/write/upload paths in `Drive`.
 
 ## Summary
 
