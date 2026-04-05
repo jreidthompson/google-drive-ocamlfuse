@@ -1,7 +1,6 @@
 open OUnit
 open GapiMonad
 open GapiMonad.SessionM.Infix
-
 module File = GapiDriveV3Model.File
 
 let session =
@@ -43,7 +42,9 @@ module FakePorts = struct
 
   let add_resource resource =
     let trashed = Option.default false resource.CacheData.Resource.trashed in
-    Hashtbl.replace resources (key resource.CacheData.Resource.path trashed) resource
+    Hashtbl.replace resources
+      (key resource.CacheData.Resource.path trashed)
+      resource
 
   let add_query_result query files = Hashtbl.replace query_results query files
 
@@ -74,10 +75,11 @@ module FakePorts = struct
     | None -> false
 
   let select_resources_with_parent_path _cache parent_path trashed =
-    Hashtbl.to_seq_values resources |> List.of_seq
+    Hashtbl.to_seq_values resources
+    |> List.of_seq
     |> List.filter (fun resource ->
-           resource.CacheData.Resource.parent_path = parent_path
-           && Option.default false resource.CacheData.Resource.trashed = trashed)
+        resource.CacheData.Resource.parent_path = parent_path
+        && Option.default false resource.CacheData.Resource.trashed = trashed)
 
   let list_files query =
     listed_queries := !listed_queries @ [ query ];
@@ -87,13 +89,16 @@ module FakePorts = struct
       | None -> [])
 
   let build_resource_tables parent_path trashed =
-    let resources = select_resources_with_parent_path dummy_cache parent_path trashed in
+    let resources =
+      select_resources_with_parent_path dummy_cache parent_path trashed
+    in
     let filename_table = Hashtbl.create 16 in
     let remote_id_table = Hashtbl.create 16 in
     List.iter
       (fun resource ->
         Hashtbl.replace filename_table
-          (Filename.basename resource.CacheData.Resource.path) 0;
+          (Filename.basename resource.CacheData.Resource.path)
+          0;
         Hashtbl.add remote_id_table
           (Option.get resource.CacheData.Resource.remote_id)
           resource)
@@ -107,7 +112,8 @@ module FakePorts = struct
       | Some cached_name ->
           if cached_name = file.File.name then resource.CacheData.Resource.path
           else
-            Filename.concat (Filename.dirname resource.CacheData.Resource.path)
+            Filename.concat
+              (Filename.dirname resource.CacheData.Resource.path)
               file.File.name
     in
     {
@@ -140,11 +146,12 @@ module FakePorts = struct
     let old_keys =
       Hashtbl.to_seq resources |> List.of_seq
       |> List.filter_map (fun (k, resource) ->
-             if
-               resource.CacheData.Resource.parent_path = parent_path
-               && Option.default false resource.CacheData.Resource.trashed = trashed
-             then Some k
-             else None)
+          if
+            resource.CacheData.Resource.parent_path = parent_path
+            && Option.default false resource.CacheData.Resource.trashed
+               = trashed
+          then Some k
+          else None)
     in
     List.iter (Hashtbl.remove resources) old_keys;
     List.iter add_resource new_resources;
@@ -169,8 +176,8 @@ let make_resource ?(id = 1L) ?remote_id ?mime_type ?(trashed = false) path =
     version = Some 1L;
   }
 
-let make_file ?(mime_type = "text/plain") ?(parents = [ "root" ]) ?(trashed = false)
-    ?(explicitly_trashed = false) id name =
+let make_file ?(mime_type = "text/plain") ?(parents = [ "root" ])
+    ?(trashed = false) ?(explicitly_trashed = false) id name =
   {
     File.empty with
     id;
@@ -188,7 +195,8 @@ let test_cache_hit_returns_cached_child_names () =
   FakePorts.reset ();
   FakePorts.set_cache_hit "/docs" false true;
   FakePorts.add_resource
-    (make_resource ~remote_id:"rid-folder" ~mime_type:Drive.folder_mime_type "/docs");
+    (make_resource ~remote_id:"rid-folder" ~mime_type:Drive.folder_mime_type
+       "/docs");
   FakePorts.add_resource (make_resource ~remote_id:"rid-a" "/docs/a.txt");
   FakePorts.add_resource (make_resource ~remote_id:"rid-b" "/docs/b.txt");
   let runtime = default_runtime () in
@@ -261,7 +269,8 @@ let suite =
          >:: test_cache_hit_returns_cached_child_names;
          "test_lost_and_found_filters_parentless_files"
          >:: test_lost_and_found_filters_parentless_files;
-         "test_shared_root_uses_shared_query" >:: test_shared_root_uses_shared_query;
+         "test_shared_root_uses_shared_query"
+         >:: test_shared_root_uses_shared_query;
          "test_trash_root_includes_explicitly_trashed_files"
          >:: test_trash_root_includes_explicitly_trashed_files;
          "test_duplicate_names_are_disambiguated_for_new_resources"

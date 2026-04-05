@@ -177,9 +177,8 @@ let test_read_link_stored_symlink_uses_cached_target () =
 let test_read_link_shortcut_with_cached_target_avoids_extra_lookup () =
   FakePorts.reset ();
   let source =
-    make_resource ~remote_id:"rid-shortcut"
-      ~mime_type:Drive.shortcut_mime_type ~link_target:"/mnt/gd/already-known"
-      ~target_id:"rid-target" "/shortcut"
+    make_resource ~remote_id:"rid-shortcut" ~mime_type:Drive.shortcut_mime_type
+      ~link_target:"/mnt/gd/already-known" ~target_id:"rid-target" "/shortcut"
   in
   FakePorts.add_resource source;
   let runtime = default_runtime () in
@@ -285,7 +284,8 @@ let test_get_attr_stored_symlink_uses_target_length () =
   let runtime = default_runtime () in
   let stat = run_session (Views.get_attr runtime "/link") in
   assert_equal Unix.S_LNK stat.Unix.LargeFile.st_kind;
-  assert_equal (Int64.of_int (String.length "../target"))
+  assert_equal
+    (Int64.of_int (String.length "../target"))
     stat.Unix.LargeFile.st_size;
   assert_equal [] !FakePorts.resource_with_id_lookups
 

@@ -1,13 +1,9 @@
 open GapiLens.Infix
 open GapiMonad
 open GapiMonad.SessionM.Infix
-
 module File = GapiDriveV3Model.File
 
-type runtime = {
-  cache : CacheData.t;
-  config : Config.t;
-}
+type runtime = { cache : CacheData.t; config : Config.t }
 
 module type PORTS = sig
   val get_path_in_cache : string -> Config.t -> string * bool
@@ -16,7 +12,10 @@ module type PORTS = sig
   val is_lost_and_found_root : string -> bool -> Config.t -> bool
   val is_shared_with_me_root : string -> bool -> Config.t -> bool
   val check_resource_in_cache : CacheData.t -> string -> bool -> bool
-  val select_resources_with_parent_path : CacheData.t -> string -> bool -> CacheData.Resource.t list
+
+  val select_resources_with_parent_path :
+    CacheData.t -> string -> bool -> CacheData.Resource.t list
+
   val list_files : string -> File.t list SessionM.m
 
   val build_resource_tables :
@@ -24,12 +23,20 @@ module type PORTS = sig
     bool ->
     (string, int) Hashtbl.t * (string, CacheData.Resource.t) Hashtbl.t
 
-  val update_resource_from_file : CacheData.Resource.t -> File.t -> CacheData.Resource.t
-  val get_unique_filename_from_file : File.t -> (string, int) Hashtbl.t -> string
+  val update_resource_from_file :
+    CacheData.Resource.t -> File.t -> CacheData.Resource.t
+
+  val get_unique_filename_from_file :
+    File.t -> (string, int) Hashtbl.t -> string
+
   val create_resource : string -> CacheData.Resource.t
 
   val insert_resources :
-    CacheData.t -> CacheData.Resource.t list -> string -> bool -> CacheData.Resource.t list
+    CacheData.t ->
+    CacheData.Resource.t list ->
+    string ->
+    bool ->
+    CacheData.Resource.t list
 
   val update_cached_resource : CacheData.t -> CacheData.Resource.t -> unit
   val current_time : unit -> float
@@ -74,7 +81,9 @@ module Make (P : PORTS) = struct
         Utils.log_with_header
           "END: Getting folder content (path=%s, trashed=%b)\n%!" path_in_cache
           trashed;
-        if path = trash_directory && trashed && not runtime.config.Config.disable_trash
+        if
+          path = trash_directory && trashed
+          && not runtime.config.Config.disable_trash
         then (
           Utils.log_with_header "BEGIN: Getting explicitly trashed files\n%!";
           let q =
@@ -163,7 +172,10 @@ module Make (P : PORTS) = struct
         Filename.basename shared_with_me_directory :: filenames
       else filenames
     in
-    if path = root_directory && (not trashed) && runtime.config.Config.lost_and_found
-    then SessionM.return (Filename.basename lost_and_found_directory :: filenames)
+    if
+      path = root_directory && (not trashed)
+      && runtime.config.Config.lost_and_found
+    then
+      SessionM.return (Filename.basename lost_and_found_directory :: filenames)
     else SessionM.return filenames
 end

@@ -1,9 +1,6 @@
 module File = GapiDriveV3Model.File
 
-type runtime = {
-  cache : CacheData.t;
-  config : Config.t;
-}
+type runtime = { cache : CacheData.t; config : Config.t }
 
 module type PORTS = sig
   val get_path_in_cache : string -> Config.t -> string * bool
@@ -26,7 +23,9 @@ module type PORTS = sig
   val update_resource_from_file :
     CacheData.Resource.t -> File.t -> CacheData.Resource.t
 
-  val get_unique_filename_from_file : File.t -> (string, int) Hashtbl.t -> string
+  val get_unique_filename_from_file :
+    File.t -> (string, int) Hashtbl.t -> string
+
   val create_resource : string -> CacheData.Resource.t
 
   val insert_resources :
