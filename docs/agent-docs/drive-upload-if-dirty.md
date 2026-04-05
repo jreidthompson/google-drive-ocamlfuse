@@ -4,13 +4,14 @@
 
 `Drive.upload_if_dirty` is the narrow bridge between:
 
-- the local cached-state gate in `start_uploading_if_dirty`
-- the request/session-based upload path in `upload_with_retry`
+- the `Drive`-level file callbacks
+- the upload-dispatch core in `DriveUploadDispatch`
 
 It does not decide whether a file is dirty in a rich sense, and it does not
 implement upload logic itself. Its job is simpler:
 
-- if the local gate says "start now", enter the request machinery
+- ask the upload-dispatch core for an optional request
+- execute that request through `do_request` when present
 - otherwise do nothing
 
 So this helper is the immediate dispatch bridge behind `flush`, `fsync`, and
@@ -34,8 +35,11 @@ The implementation is:
 
 ```ocaml
 let upload_if_dirty path =
-  if start_uploading_if_dirty path then
-    do_request (upload_with_retry path) |> ignore
+  match
+    UploadDispatchOps.upload_if_dirty (drive_upload_dispatch_runtime ()) path
+  with
+  | None -> ()
+  | Some upload_request -> do_request upload_request |> ignore
 ```
 
 That is the whole control flow.
@@ -44,10 +48,11 @@ That is the whole control flow.
 
 At a high level, `upload_if_dirty` does this:
 
-1. call `start_uploading_if_dirty path`
-2. if that returns `false`, return immediately
-3. if that returns `true`, run `do_request (upload_with_retry path)`
-4. discard the request result and return `unit`
+1. build the upload-dispatch runtime from `Context`
+2. call `DriveUploadDispatch.upload_if_dirty runtime path`
+3. if that returns `None`, return immediately
+4. if that returns `Some upload_request`, run `do_request upload_request`
+5. discard the request result and return `unit`
 
 So the helper is a pure branch point between:
 
@@ -56,20 +61,21 @@ So the helper is a pure branch point between:
 
 ## Relationship To `start_uploading_if_dirty`
 
-The first phase is:
+The first phase is delegated to:
 
 ```ocaml
-start_uploading_if_dirty path
+DriveUploadDispatch.upload_if_dirty runtime path
 ```
 
-That helper performs the cheap local check:
+That helper begins with the cheap local check in
+`DriveUploadDispatch.start_uploading_if_dirty`:
 
 - normalize path
 - look up the cached row
 - require exact state `ToUpload`
 - flip the row to `Uploading`
 
-If that phase returns `false`, `upload_if_dirty` stops immediately.
+If the dispatch core returns `None`, `upload_if_dirty` stops immediately.
 
 That means in the `false` branch, this helper does not:
 
@@ -96,10 +102,10 @@ no-op once the resource has already left `ToUpload`.
 
 ## The Meaning Of The `true` Branch
 
-If the local gate returns `true`, `upload_if_dirty` runs:
+If the dispatch core returns `Some upload_request`, `upload_if_dirty` runs:
 
 ```ocaml
-do_request (upload_with_retry path) |> ignore
+do_request upload_request |> ignore
 ```
 
 This is the important boundary crossing in the helper.
@@ -107,7 +113,7 @@ This is the important boundary crossing in the helper.
 It means:
 
 - the cheap local decision has already been made
-- now the code enters the authenticated request/session machinery
+- the code enters the authenticated request/session machinery
 - the later upload path can do full path resolution and Drive-side work
 
 So `upload_if_dirty` is the handoff point from local cache state into the
@@ -115,10 +121,10 @@ repository's normal request execution model.
 
 ## Why `do_request` Matters
 
-`upload_with_retry path` has type:
+`DriveUploadDispatch.upload_with_retry runtime path` has type:
 
 ```ocaml
-string -> unit GapiMonad.SessionM.m
+unit GapiMonad.SessionM.m
 ```
 
 So it cannot run by itself from this plain synchronous helper.
@@ -132,23 +138,24 @@ directly and stop there.
 
 ## Relationship To `upload_with_retry`
 
-`upload_if_dirty` does not resolve the resource itself.
+`Drive.upload_if_dirty` does not resolve the resource itself.
 
-That work begins one step later in:
+That work is packaged inside the request returned by
+`DriveUploadDispatch.upload_if_dirty`, which reaches:
 
 ```ocaml
-upload_with_retry path
+DriveUploadDispatch.upload_with_retry runtime path
 ```
 
 which:
 
 1. normalizes the visible path again
 2. resolves the current resource with `get_resource`
-3. calls `queue_upload resource`
+3. calls `queue_upload runtime resource`
 
 So `upload_if_dirty` should be read as:
 
-- "enter the upload request path now"
+- "enter the upload request path"
 
 not as:
 
@@ -211,7 +218,7 @@ See `docs/agent-docs/gdfuse-fuse-boundary.md` for that translation layer.
 
 `Drive.upload_if_dirty` does not:
 
-- inspect cached state itself beyond delegating to `start_uploading_if_dirty`
+- inspect cached state itself beyond delegating to `DriveUploadDispatch`
 - resolve the resource itself
 - choose sync vs async upload policy itself
 - flush memory buffers itself
@@ -229,8 +236,9 @@ It only bridges the local state gate into the request/session upload path.
 ## Source Pointers
 
 - `src/drive.ml`: `upload_if_dirty`
-- `src/drive.ml`: `start_uploading_if_dirty`
-- `src/drive.ml`: `upload_with_retry`
+- `src/driveUploadDispatch.ml`: `upload_if_dirty`
+- `src/driveUploadDispatch.ml`: `start_uploading_if_dirty`
+- `src/driveUploadDispatch.ml`: `upload_with_retry`
 - `src/drive.ml`: `flush`
 - `src/drive.ml`: `fsync`
 - `src/drive.ml`: `release`

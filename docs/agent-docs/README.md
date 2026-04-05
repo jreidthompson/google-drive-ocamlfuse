@@ -23,12 +23,12 @@ Read these files in order:
 16. `drive-chmod-chown-utime.md` for the thin metadata-mutation entrypoints over `update_remote_resource`
 17. `drive-download-resource.md` for local content materialization and reuse
 18. `drive-read.md` for stream-vs-cache read policy and read-ahead behavior
-19. `drive-write.md` for local mutation, dirty-state updates, and write buffers
-20. `drive-truncate.md` for local size mutation and signed cache-size updates
-21. `drive-start-uploading-if-dirty.md` for the tiny `ToUpload -> Uploading` gate behind upload dispatch
-22. `drive-upload-if-dirty.md` for the bridge from the local dirty-state gate into `do_request (upload_with_retry ...)`
-23. `drive-upload-with-retry.md` for the path-based bridge from `do_request` into `get_resource` and `queue_upload`
-24. `drive-queue-upload.md` for the sync-vs-async dispatcher over `upload_resource_with_retry` and `UploadQueue.queue_resource`
+19. `drive-write.md` for local mutation, dirty-state updates, and write buffers in the file-mutation core
+20. `drive-truncate.md` for local size mutation and signed cache-size updates in the file-mutation core
+21. `drive-start-uploading-if-dirty.md` for the tiny `ToUpload -> Uploading` gate in the upload-dispatch core
+22. `drive-upload-if-dirty.md` for the `Drive`-level bridge from file callbacks into the upload-dispatch request path
+23. `drive-upload-with-retry.md` for the path-based bridge from the upload-dispatch gate into `get_resource` and `queue_upload`
+24. `drive-queue-upload.md` for the sync-vs-async dispatcher over the direct-upload port and the async enqueue helper
 25. `upload-queue-queue-resource.md` for the async enqueue step that persists and deduplicates upload-queue rows
 26. `upload-queue-start-async-upload-thread.md` for the runtime-state installation and poll-thread startup of the async upload subsystem
 27. `upload-queue-stop-async-upload-thread.md` for the stop-flag request that asks the async upload poll loop to drain and exit

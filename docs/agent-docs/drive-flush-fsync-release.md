@@ -10,7 +10,7 @@ the `Drive` layer. They do not implement three different sync policies.
 
 Their only `Drive`-level question is:
 
-- is this path still in `ToUpload` state?
+- is this path in `ToUpload` state?
 
 If yes, they launch the upload pipeline. If not, they return.
 
@@ -80,10 +80,14 @@ All three wrappers hand the work to:
 upload_if_dirty path
 ```
 
-That downstream helper does two things:
+That `Drive`-level helper asks the upload-dispatch core for an optional request
+and executes it when present.
 
-1. ask the cheap local gate whether this path is still uploadable now
-2. if yes, enter `do_request (upload_with_retry path)`
+The downstream dispatch helper does two things:
+
+1. ask the cheap local gate whether this path is eligible for upload dispatch
+2. if yes, return a request that `Drive.upload_if_dirty` executes through
+   `do_request`
 
 The detailed semantics of those helper layers live in:
 
@@ -191,6 +195,7 @@ They only hand the visible path to the upload-dispatch gate.
 - `src/drive.ml`: `fsync`
 - `src/drive.ml`: `release`
 - `src/drive.ml`: `upload_if_dirty`
+- `src/driveUploadDispatch.ml`: `upload_if_dirty`
 - `bin/gdfuseFuse.ml`: `flush`
 - `bin/gdfuseFuse.ml`: `fsync`
 - `bin/gdfuseFuse.ml`: `release`

@@ -12,8 +12,8 @@ For most changes, inspect these files first:
 - the backend module involved: `cache.ml`, `dbCache.ml`, `memoryCache.ml`,
   `buffering.ml`, `uploadQueue.ml`, or `oauth2.ml`
 
-This repo has a lot of behavior in one large module (`Drive`), so broad
-assumptions are risky.
+`Drive` is the public FUSE-facing entrypoint, and several filesystem cores live
+in dedicated modules. Broad assumptions are risky.
 
 ## Where To Change Things
 
@@ -61,11 +61,17 @@ Be careful to update:
 Edit:
 
 - `src/drive.ml`
+- `src/driveMutations.ml`
+- `src/driveViews.ml`
+- `src/driveDirectoryReads.ml`
+- `src/driveFileMutations.ml`
+- `src/driveUploadDispatch.ml`
 
 Typical examples:
 
 - `readdir`, `getattr`, `read`, `write`
 - create/delete/rename/truncate
+- upload-dispatch behavior behind `flush` / `fsync` / `release`
 - xattr and symlink behavior
 - special virtual directories
 
@@ -94,6 +100,7 @@ This area is performance-sensitive and concurrency-sensitive.
 
 Edit:
 
+- `src/driveUploadDispatch.ml`
 - `src/uploadQueue.ml`
 - `src/drive.ml`
 
@@ -125,7 +132,7 @@ Read the entire function before changing even a small branch.
 
 ### Rule 2: Keep cache metadata and file content changes aligned
 
-If local bytes change, confirm all of these still make sense:
+If local bytes change, confirm all of these remain aligned:
 
 - cache file contents
 - `Resource.size`
@@ -156,7 +163,7 @@ If you add a new failure path, either:
 ### Rule 5: Watch shutdown behavior
 
 There are several background threads and deferred writes. Changes that appear
-correct during steady state can still lose data or deadlock on exit.
+correct during steady state can lose data or deadlock on exit.
 
 Relevant shutdown steps:
 
@@ -230,6 +237,7 @@ Read:
 
 Read:
 
+- `src/driveUploadDispatch.ml`
 - `src/drive.ml`
 - `src/uploadQueue.ml`
 - `src/buffering.ml`

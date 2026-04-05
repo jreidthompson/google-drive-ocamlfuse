@@ -17,7 +17,8 @@ Its responsibilities are:
 
 So this helper is the async enqueue step that sits between:
 
-- `Drive.queue_upload`, which decides to use the async path at all
+- `DriveUploadDispatch.queue_upload`, which decides to use the async path at
+  all
 - the poll-thread subsystem, which later selects and executes queued entries
 
 ## Public Signature
@@ -188,7 +189,7 @@ wait_for_slot ()
 That inner loop:
 
 1. counts current queue entries
-2. logs whether the queue is still above the limit
+2. logs whether the queue is above the limit
 3. sleeps for one second
 4. repeats until `entries < max_length`
 
@@ -203,7 +204,7 @@ The length check uses:
 Cache.UploadQueue.count_entries cache
 ```
 
-That counts all queue rows, not only rows still in `ToUpload`.
+That counts all queue rows, not only rows in `ToUpload`.
 
 So the admission limit is really:
 
@@ -213,7 +214,7 @@ not:
 
 - number of not-yet-started queue entries
 
-This means in-progress `Uploading` rows still count against the configured queue
+This means in-progress `Uploading` rows count against the configured queue
 length limit until they are deleted.
 
 ## Order Of Checks
@@ -248,12 +249,12 @@ synchronous local cache/database operation.
 The later worker-side execution happens only after the poll thread wakes and
 selects the queued row.
 
-## Relationship To `Drive.queue_upload`
+## Relationship To `DriveUploadDispatch.queue_upload`
 
 The normal caller is the async branch of:
 
 ```ocaml
-Drive.queue_upload
+DriveUploadDispatch.queue_upload
 ```
 
 That caller already did two important things:

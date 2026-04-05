@@ -1,12 +1,12 @@
-# `Drive.start_uploading_if_dirty`
+# `DriveUploadDispatch.start_uploading_if_dirty`
 
 ## Purpose
 
-`Drive.start_uploading_if_dirty` is the tiny state-transition gate in front of
-the upload lifecycle.
+`DriveUploadDispatch.start_uploading_if_dirty` is the tiny state-transition
+gate in front of the upload lifecycle.
 
 Its job is not to perform any upload work itself. It only decides whether a
-path currently points to a cached resource that is still in `ToUpload` state
+path currently points to a cached resource in `ToUpload` state
 and, if so, flips that row to `Uploading`.
 
 So this helper is the local scheduling gate behind `flush`, `fsync`, and
@@ -15,7 +15,7 @@ So this helper is the local scheduling gate behind `flush`, `fsync`, and
 ## Signature
 
 ```ocaml
-val start_uploading_if_dirty : string -> bool
+val start_uploading_if_dirty : runtime -> string -> bool
 ```
 
 The return value answers one narrow question:
@@ -31,17 +31,16 @@ It does not return a resource handle or a request object.
 The implementation is:
 
 ```ocaml
-let start_uploading_if_dirty path =
-  let config = Context.get_ctx () |. Context.config_lens in
-  let path_in_cache, trashed = get_path_in_cache path config in
-  let resource = lookup_resource path_in_cache trashed in
+let start_uploading_if_dirty runtime path =
+  let path_in_cache, trashed = get_path_in_cache path runtime.config in
+  let resource = lookup_resource runtime.cache path_in_cache trashed in
   match resource with
   | None -> false
-  | Some r ->
-      if r.CacheData.Resource.state == CacheData.Resource.State.ToUpload then (
-        let cache = Context.get_cache () in
-        update_cached_resource_state cache CacheData.Resource.State.Uploading
-          r.CacheData.Resource.id;
+  | Some resource ->
+      if resource.CacheData.Resource.state = CacheData.Resource.State.ToUpload
+      then (
+        update_cached_resource_state runtime.cache
+          CacheData.Resource.State.Uploading resource.CacheData.Resource.id;
         true)
       else false
 ```
@@ -65,7 +64,7 @@ There is no Drive API call and no request/session machinery here.
 The helper begins with:
 
 ```ocaml
-let path_in_cache, trashed = get_path_in_cache path config
+let path_in_cache, trashed = get_path_in_cache path runtime.config
 ```
 
 So even this tiny gate uses the normal namespace model:
@@ -123,8 +122,8 @@ very specific upload-dispatch gate.
 When the helper sees `ToUpload`, it immediately does:
 
 ```ocaml
-update_cached_resource_state cache CacheData.Resource.State.Uploading
-  r.CacheData.Resource.id
+update_cached_resource_state runtime.cache CacheData.Resource.State.Uploading
+  resource.CacheData.Resource.id
 ```
 
 That state flip is the whole point of the helper.
@@ -136,13 +135,16 @@ So this function is the main idempotency guard for repeated trigger callbacks.
 
 ## Relationship To `upload_if_dirty`
 
-The immediate caller is:
+The immediate caller inside the upload-dispatch core is:
 
 ```ocaml
-let upload_if_dirty path =
-  if start_uploading_if_dirty path then
-    do_request (upload_with_retry path) |> ignore
+let upload_if_dirty runtime path =
+  if start_uploading_if_dirty runtime path then
+    Some (upload_with_retry runtime path)
+  else None
 ```
+
+`Drive.upload_if_dirty` executes that optional request through `do_request`.
 
 So `start_uploading_if_dirty` is phase 1 of a two-phase dispatch path:
 
@@ -151,8 +153,8 @@ So `start_uploading_if_dirty` is phase 1 of a two-phase dispatch path:
 
 If this function returns `false`, the later upload path is never entered.
 
-If it returns `true`, the next step is `upload_with_retry path`, which performs
-full path resolution and eventually reaches `queue_upload`.
+If it returns `true`, the next step is `upload_with_retry runtime path`, which
+performs full path resolution and eventually reaches `queue_upload`.
 
 See `docs/agent-docs/drive-upload-if-dirty.md` for the tiny bridge helper that
 performs that handoff into `do_request`.
@@ -209,9 +211,9 @@ contract documented here.
 So if upload-trigger concurrency changes substantially, this small helper is one
 of the first places to re-examine.
 
-## What `Drive.start_uploading_if_dirty` Does Not Do
+## What `DriveUploadDispatch.start_uploading_if_dirty` Does Not Do
 
-`Drive.start_uploading_if_dirty` does not:
+`DriveUploadDispatch.start_uploading_if_dirty` does not:
 
 - call `get_resource`
 - refresh metadata
@@ -231,7 +233,8 @@ dispatch path.
 
 ## Source Pointers
 
-- `src/drive.ml`: `start_uploading_if_dirty`
+- `src/driveUploadDispatch.ml`: `start_uploading_if_dirty`
 - `src/drive.ml`: `lookup_resource`
 - `src/drive.ml`: `update_cached_resource_state`
+- `src/driveUploadDispatch.ml`: `upload_if_dirty`
 - `src/drive.ml`: `upload_if_dirty`

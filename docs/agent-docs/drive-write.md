@@ -5,6 +5,9 @@
 `Drive.write` is the top-level local-mutation path used by the FUSE `write`
 callback.
 
+The public `Drive` entrypoint builds runtime state and delegates the mutation
+logic to `DriveFileMutations.write`.
+
 It does not upload data to Drive directly. Its job is to:
 
 - resolve the target resource
@@ -92,7 +95,8 @@ See `docs/agent-docs/drive-get-resource.md` for the resolution semantics.
 
 ## Ensuring Local Content Exists First
 
-Before touching the local file or write buffers, `write` always runs:
+Before touching the local file or write buffers, the production write path
+ensures local content through:
 
 ```ocaml
 with_retry download_resource resource
@@ -148,7 +152,8 @@ That later flush can happen through:
 
 - `Drive.read`, before a non-streaming local-file read
 - `Drive.truncate`, before local truncation
-- `Drive.queue_upload` / `upload_resource_with_retry`, before upload
+- `DriveUploadDispatch.queue_upload` / `upload_resource_with_retry`, before
+  upload
 - explicit buffer-pressure eviction inside `Buffering.MemoryBuffers`
 
 So `write_buffers` trades immediate disk writes for deferred flushing, but the
@@ -211,8 +216,8 @@ In that case `write` only updates:
 
 through `update_cached_resource_state`.
 
-So overwrite-in-place writes still become dirty, but they do not rewrite the
-cached size field.
+So overwrite-in-place writes become dirty, but they do not rewrite the cached
+size field.
 
 ## Return Value
 
@@ -283,3 +288,9 @@ It does not shrink the file, and it does not recompute size from disk. Shrinks
 are handled by `truncate`, not by overwrite writes.
 
 See `docs/agent-docs/drive-truncate.md` for the dedicated size-mutation path.
+
+## Source Pointers
+
+- `src/drive.ml`: `write`
+- `src/driveFileMutations.ml`: `write`
+- `src/drive.ml`: `download_resource`

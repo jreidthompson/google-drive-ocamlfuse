@@ -114,7 +114,7 @@ later.
 
 This is why `Drive.init_filesystem` passes `upload_resource_by_id` instead of
 letting `UploadQueue` talk directly to Drive internals: queue scheduling lives
-in `UploadQueue`, but resource upload behavior still lives in `Drive`.
+in `UploadQueue`, but resource upload behavior lives in `Drive`.
 
 See `docs/agent-docs/drive-upload-path.md` for the end-to-end upload lifecycle.
 See `docs/agent-docs/upload-queue-start-async-upload-thread.md` for the queue
@@ -156,7 +156,7 @@ The folder-fetch loop repeatedly:
 2. calls `read_dir` on that folder path
 
 The selection criteria come from the cache layer. In practice it looks for
-folder resources whose state is still `ToDownload` and that are not in trash.
+folder resources whose state is `ToDownload` and that are not in trash.
 
 Calling `read_dir` does the expensive part:
 
@@ -191,8 +191,9 @@ The relationships are:
 - `async_upload_threads` sets pool width for upload workers
 - `background_folder_fetching=true` enables folder prefetching
 
-`async_upload_queue_max_length` does not affect startup directly. It is enforced
-later when writes are queued by `Drive.queue_upload`.
+`async_upload_queue_max_length` does not affect startup directly. It is
+enforced later when the upload-dispatch layer queues a resource through
+`DriveUploadDispatch.queue_upload`.
 
 ## Context And Shutdown Contract
 

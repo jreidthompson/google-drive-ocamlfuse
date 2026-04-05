@@ -10,8 +10,9 @@ The executable mounts a FUSE filesystem whose operations are implemented in
 - Google Drive API calls through `gapi-ocaml`
 - background work such as uploads and folder prefetching
 
-The mutation-heavy create/delete/rename paths and the read-side view/listing
-paths are separated from the content-read and upload paths:
+The mutation-heavy create/delete/rename paths, the read-side view/listing
+paths, the local file-mutation paths, and the upload-dispatch paths are
+separated:
 
 - `Drive` is the public FUSE-facing module
 - `src/driveMutations.ml` holds the mutation core for create/delete/rename
@@ -19,10 +20,14 @@ paths are separated from the content-read and upload paths:
 - `src/driveViews.ml` holds the read-side view core for `get_attr`,
   `read_link`, and the lookup portion of `opendir`
 - `src/driveDirectoryReads.ml` holds the directory-listing core for `read_dir`
-- `src/drive.ml` provides the production `DriveMutationPorts` implementation,
-  `DriveViewPorts`, and `DriveDirectoryReadPorts`, builds the small runtimes
-  from `Context`, and executes those sessions through
-  `Oauth2.do_request`
+- `src/driveFileMutations.ml` holds the local file-mutation core for `write`
+  and `truncate`
+- `src/driveUploadDispatch.ml` holds the upload-dispatch core for
+  `start_uploading_if_dirty`, `upload_with_retry`, and `queue_upload`
+- `src/drive.ml` provides the production `DriveMutationPorts`,
+  `DriveViewPorts`, `DriveDirectoryReadPorts`, `DriveFileMutationPorts`, and
+  `DriveUploadDispatchPorts`, builds the small runtimes from `Context`, and
+  executes those sessions through `Oauth2.do_request`
 
 The design is stateful. A global `Context.t` stores the current config, state,
 cache handle, memory buffers, locks, and background threads.
@@ -268,7 +273,7 @@ materialization path behind the local-file branch.
 
 ## Write Path
 
-`Drive.write` always works against the local cached file first.
+`Drive.write` is a thin wrapper over `DriveFileMutations`.
 
 The path is:
 
@@ -292,7 +297,8 @@ Upload is not performed on every `write`. It is triggered by:
 - `fsync`
 - `release`
 
-all of which call `upload_if_dirty`.
+all of which call the `Drive`-level `upload_if_dirty` wrapper over
+`DriveUploadDispatch`.
 
 See `docs/agent-docs/drive-flush-fsync-release.md` for the thin file-callback
 layer that gates upload dispatch on the `ToUpload` state.
@@ -302,7 +308,8 @@ local cache file exists before write-side mutation begins.
 
 ## Upload Path
 
-Upload logic lives in `Drive.upload`, `Drive.queue_upload`,
+Upload-dispatch logic lives in `DriveUploadDispatch`. Concrete upload execution
+lives in `Drive.upload`, `Drive.upload_resource_with_retry`,
 `Drive.upload_resource_by_id`, and `UploadQueue`.
 
 The file-level entrypoints that trigger this path are `Drive.flush`,
@@ -320,7 +327,7 @@ Shared behavior:
 - update resource state to `Uploading`
 - upload media with `FilesResource.update`
 - reconcile returned metadata into cache
-- move state back to `Synchronized` if still appropriate
+- move state back to `Synchronized` when no newer local state superseded it
 
 The async path persists queue entries in cache, then a background thread polls
 the queue and hands work to `ThreadPool`.
@@ -353,7 +360,7 @@ See `docs/agent-docs/thread-pool-pending-threads.md` for the observable worker
 count that the async-upload shutdown path logs before joining workers.
 
 See `docs/agent-docs/thread-pool-shutdown.md` for the generic join step used
-after queue draining to wait for still-running workers.
+after queue draining to wait for worker threads recorded as running.
 
 See `docs/agent-docs/drive-upload-resource-by-id.md` for the worker-side
 bridge from queue entries back into the normal request/session upload path.
@@ -435,4 +442,4 @@ When changing concurrent code, explicitly trace:
 
 - who owns each mutable structure
 - when data is persisted to SQLite
-- whether a thread may still access stale state during shutdown
+- whether a thread may access stale state during shutdown

@@ -74,8 +74,9 @@ The two are related, but they are not interchangeable.
 
 ### 1. Dirtying Operations
 
-`Drive.write` and `Drive.truncate` both stop after local mutation and cache
-updates. They do not upload immediately.
+`Drive.write` and `Drive.truncate` delegate local mutation to
+`DriveFileMutations`. They stop after local mutation and cache updates. They do
+not upload immediately.
 
 What they contribute to the later upload path is:
 
@@ -103,12 +104,12 @@ upload_if_dirty path
 See `docs/agent-docs/drive-flush-fsync-release.md` for the FUSE-boundary view
 of those callbacks.
 
-### 3. Cheap Local Gate: `start_uploading_if_dirty`
+### 3. Cheap Local Gate: `DriveUploadDispatch.start_uploading_if_dirty`
 
-`upload_if_dirty` begins with the local gate:
+The upload-dispatch core begins with the local gate:
 
 ```ocaml
-start_uploading_if_dirty path
+start_uploading_if_dirty runtime path
 ```
 
 That helper is intentionally cheap:
@@ -126,14 +127,14 @@ state contract.
 
 ### 4. Request-Side Re-Resolution
 
-If the local gate returns `true`, `upload_if_dirty` enters the request/session
-layer:
+If the local gate returns `true`, the `Drive`-level wrapper enters the
+request/session layer:
 
 ```ocaml
-do_request (upload_with_retry path) |> ignore
+do_request upload_request |> ignore
 ```
 
-`upload_with_retry` then:
+`DriveUploadDispatch.upload_with_retry` then:
 
 1. normalizes the visible path again
 2. resolves the current resource with `get_resource`
@@ -146,20 +147,22 @@ gate.
 See `docs/agent-docs/drive-upload-if-dirty.md` and
 `docs/agent-docs/drive-upload-with-retry.md` for those two handoff layers.
 
-### 5. Dispatch Policy In `queue_upload`
+### 5. Dispatch Policy In `DriveUploadDispatch.queue_upload`
 
-`queue_upload` is where the path stops dealing in visible paths and starts
-dealing in a resolved `CacheData.Resource.t`.
+`DriveUploadDispatch.queue_upload` is where the path stops dealing in visible
+paths and starts dealing in a resolved `CacheData.Resource.t`.
 
 It chooses between two modes.
 
 ### Direct Synchronous Mode
 
-If `config.async_upload_queue = false`, it immediately runs:
+If `config.async_upload_queue = false`, it calls the direct-upload port:
 
 ```ocaml
-upload_resource_with_retry resource
+upload_now_with_retry resource
 ```
+
+In production wiring, that port is `upload_resource_with_retry`.
 
 ### Async Queue Mode
 
@@ -219,7 +222,7 @@ reached the on-disk cache file.
 That is why buffer flushing appears in more than one stage:
 
 - `truncate` flushes before changing file length
-- `queue_upload` flushes before async queue handoff
+- `DriveUploadDispatch.queue_upload` flushes before async queue handoff
 - `upload_resource_with_retry` flushes before the actual upload attempt
 
 Those are not redundant copies of the same responsibility. They protect
@@ -286,11 +289,14 @@ When changing this area, watch these invariants:
 ## Source Pointers
 
 - `src/drive.ml`: `write`
+- `src/driveFileMutations.ml`: `write`
 - `src/drive.ml`: `truncate`
-- `src/drive.ml`: `start_uploading_if_dirty`
+- `src/driveFileMutations.ml`: `truncate`
 - `src/drive.ml`: `upload_if_dirty`
-- `src/drive.ml`: `upload_with_retry`
-- `src/drive.ml`: `queue_upload`
+- `src/driveUploadDispatch.ml`: `start_uploading_if_dirty`
+- `src/driveUploadDispatch.ml`: `upload_if_dirty`
+- `src/driveUploadDispatch.ml`: `upload_with_retry`
+- `src/driveUploadDispatch.ml`: `queue_upload`
 - `src/drive.ml`: `upload_resource_by_id`
 - `src/drive.ml`: `upload_resource_with_retry`
 - `src/drive.ml`: `upload`

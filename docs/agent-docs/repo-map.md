@@ -73,7 +73,7 @@ The `Makefile` is only a small wrapper around these dune commands.
   - The main implementation module.
   - Contains most filesystem behavior: lookup, listing, reads, writes, upload,
     xattrs, symlinks, metadata mapping, Google Drive API requests, and the
-    production wiring for mutation and read-side flows.
+    production wiring for extracted filesystem cores.
   - Create/delete/rename enter through public `Drive` functions here, and
     those wrappers delegate into `DriveMutations` through
     `DriveMutationPorts`.
@@ -81,6 +81,10 @@ The `Makefile` is only a small wrapper around these dune commands.
     through `DriveViewPorts`.
   - `read_dir` delegates into `DriveDirectoryReads` through
     `DriveDirectoryReadPorts`.
+  - `write` and `truncate` delegate into `DriveFileMutations` through
+    `DriveFileMutationPorts`.
+  - `flush`, `fsync`, `release`, and rename-replace upload handoff delegate
+    into `DriveUploadDispatch` through `DriveUploadDispatchPorts`.
   - If a user-visible filesystem operation changes behavior, the fix is
     probably here.
 
@@ -103,6 +107,16 @@ The `Makefile` is only a small wrapper around these dune commands.
   - Owns cache-hit reuse, synthetic-root listing strategy, remote query
     selection, and snapshot rebuild/replacement.
   - Keeps directory-listing policy separate from streaming/content-read logic.
+
+- `src/driveFileMutations.ml`
+  - Local file-mutation core for `write` and `truncate`.
+  - Owns write-sink selection, dirty-state updates, and size/accounting
+    changes for local content mutation.
+
+- `src/driveUploadDispatch.ml`
+  - Upload-dispatch core for dirty-state gating and sync-vs-async handoff.
+  - Owns the `ToUpload -> Uploading` gate, path re-resolution before dispatch,
+    and the branch between direct upload and async enqueueing.
 
 ### Global Runtime State
 
@@ -196,6 +210,8 @@ Current tests are in:
 - `test/testConfigRuntime.ml`
 - `test/testConfigStore.ml`
 - `test/testDriveDirectoryReads.ml`
+- `test/testDriveFileMutations.ml`
+- `test/testDriveUploadDispatch.ml`
 - `test/testDriveMutations.ml`
 - `test/testDriveViews.ml`
 - `test/testGdfuseCli.ml`
@@ -218,10 +234,12 @@ There are no end-to-end tests for:
 - OAuth flows
 - rename/delete semantics against live Drive state
 
-The mutation and read-side cores are covered by focused unit tests in
-`test/testDriveMutations.ml`, `test/testDriveViews.ml`, and
-`test/testDriveDirectoryReads.ml`, but live Drive and FUSE integration still
-need manual validation for behavior changes in those paths.
+The mutation, read-side, file-mutation, and upload-dispatch cores are covered
+by focused unit tests in `test/testDriveMutations.ml`,
+`test/testDriveViews.ml`, `test/testDriveDirectoryReads.ml`,
+`test/testDriveFileMutations.ml`, and `test/testDriveUploadDispatch.ml`, but
+live Drive and FUSE integration need manual validation for behavior changes in
+those paths.
 
 Any change in those areas should be reasoned carefully and ideally verified
 manually.

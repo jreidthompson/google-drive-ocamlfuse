@@ -73,7 +73,7 @@ This means:
 - the synthetic `/lost+found` root itself cannot be renamed
 - targets inside `/lost+found` are not allowed
 
-The source may still come from under `/lost+found`; the function has a special
+The source may come from under `/lost+found`; the function has a special
 remote-parent handling path for that case later.
 
 ## Path Breakdown
@@ -200,7 +200,7 @@ If the target exists, `replace_target`:
 5. copies the local source cache file onto the target cache file
 6. updates cache-size metadata
 7. marks the target resource `ToUpload`
-8. calls `queue_upload target_resource`
+8. calls `DriveUploadDispatch.queue_upload target_resource`
 9. deletes the source path
 
 So the preserved object is the target, not the source.
@@ -214,8 +214,8 @@ different from the original source resource id.
 
 Instead it is:
 
-- a target metadata patch now
-- a local cache content copy now
+- a target metadata patch
+- a local cache content copy
 - a queued content upload for the target afterwards
 - deletion/trashing of the source path
 
@@ -319,7 +319,7 @@ This handles the case where a resource is moved into a new parent without an
 explicit basename change, but the new parent already contains another item that
 would collide with the same visible filename.
 
-So after a pure move, the cache path may still need to be recomputed locally for
+So after a pure move, the cache path may need to be recomputed locally for
 duplicate disambiguation.
 
 This is a local-filesystem naming concern, not a change to the underlying Drive
@@ -396,7 +396,7 @@ When changing this area, watch these invariants:
 - `mv_keep_target` can switch the surviving remote id from source to target
 - destination `NotFound` tombstones must be cleared after success
 - moved/renamed folders need cache cleanup at the old location
-- pure parent moves may still need local path recomputation for duplicate
+- pure parent moves may need local path recomputation for duplicate
   disambiguation
 
 ## Source Pointers
@@ -404,6 +404,6 @@ When changing this area, watch these invariants:
 - `src/drive.ml`: `rename`
 - `src/driveMutations.ml`: `rename`
 - `src/driveMutations.ml`: `update_remote_resource`
-- `src/drive.ml`: `queue_upload`
+- `src/driveUploadDispatch.ml`: `queue_upload`
 - `src/drive.ml`: `recompute_path`
 - `test/testDriveMutations.ml`

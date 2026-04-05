@@ -1,9 +1,9 @@
-# `Drive.upload_with_retry`
+# `DriveUploadDispatch.upload_with_retry`
 
 ## Purpose
 
-`Drive.upload_with_retry` is the path-based bridge from the upload trigger layer
-into the resource-based upload dispatcher.
+`DriveUploadDispatch.upload_with_retry` is the path-based bridge from the
+upload trigger layer into the resource-based upload dispatcher.
 
 It takes a visible path, resolves the current resource through the normal
 lookup machinery, and then hands that resolved row to `queue_upload`.
@@ -17,7 +17,7 @@ So this helper sits between:
 ## Signature
 
 ```ocaml
-val upload_with_retry : string -> unit GapiMonad.SessionM.m
+val upload_with_retry : runtime -> string -> unit GapiMonad.SessionM.m
 ```
 
 The return type matters:
@@ -25,10 +25,10 @@ The return type matters:
 - this is a session/request computation, not a plain synchronous helper
 - it must be run through `do_request` or another session executor
 
-That is why `upload_if_dirty` wraps it in:
+That request is executed by the `Drive`-level wrapper through:
 
 ```ocaml
-do_request (upload_with_retry path) |> ignore
+do_request upload_request |> ignore
 ```
 
 ## Entire Implementation
@@ -36,10 +36,10 @@ do_request (upload_with_retry path) |> ignore
 The implementation is:
 
 ```ocaml
-let upload_with_retry path =
-  let config = Context.get_ctx () |. Context.config_lens in
-  let path_in_cache, trashed = get_path_in_cache path config in
-  get_resource path_in_cache trashed >>= fun resource -> queue_upload resource
+let upload_with_retry runtime path =
+  let path_in_cache, trashed = get_path_in_cache path runtime.config in
+  get_resource path_in_cache trashed >>= fun resource ->
+  queue_upload runtime resource
 ```
 
 That is the whole control flow.
@@ -50,7 +50,7 @@ At a high level, `upload_with_retry` does this:
 
 1. normalize the visible path into `(path_in_cache, trashed)`
 2. resolve the current resource with `get_resource`
-3. call `queue_upload resource`
+3. call `queue_upload runtime resource`
 
 There is no extra local branching beyond that.
 
@@ -59,7 +59,7 @@ There is no extra local branching beyond that.
 The helper begins with:
 
 ```ocaml
-let path_in_cache, trashed = get_path_in_cache path config
+let path_in_cache, trashed = get_path_in_cache path runtime.config
 ```
 
 So, unlike the cheaper local gate in `start_uploading_if_dirty`, this function
@@ -84,7 +84,7 @@ Key consequences:
 - metadata may be refreshed first through `get_metadata`
 - stale cache rows may be repaired
 - the resource can be reloaded from remote metadata if needed
-- missing paths can now fail through the normal lookup path
+- missing paths can fail through the normal lookup path
 
 So `upload_with_retry` is the point where the upload flow stops trusting only
 the earlier cheap cached-state check and asks for the current authoritative row.
@@ -95,7 +95,7 @@ The preceding helper, `start_uploading_if_dirty`, only performs a cheap local
 decision and state transition.
 
 It does not return the resource it found, and it does not guarantee that the
-earlier cached row is still the best row to upload from.
+earlier cached row is the best row to upload from.
 
 `upload_with_retry` fixes that by resolving again through `get_resource` before
 dispatching to `queue_upload`.
@@ -110,7 +110,7 @@ This is why the upload flow is split into:
 After resolution, the helper does exactly one thing:
 
 ```ocaml
-queue_upload resource
+queue_upload runtime resource
 ```
 
 That means all downstream policy lives in `queue_upload`, including:
@@ -163,7 +163,9 @@ later FUSE boundary wrapper determine how those exceptions surface.
 
 ## Relationship To `upload_if_dirty`
 
-`upload_if_dirty` is the plain helper that calls this session computation.
+`DriveUploadDispatch.upload_if_dirty` builds the optional request that contains
+this session computation, and `Drive.upload_if_dirty` executes it through
+`do_request`.
 
 The split is:
 
@@ -179,9 +181,9 @@ the first places to inspect.
 
 See `docs/agent-docs/drive-upload-if-dirty.md` for the caller side.
 
-## What `Drive.upload_with_retry` Does Not Do
+## What `DriveUploadDispatch.upload_with_retry` Does Not Do
 
-`Drive.upload_with_retry` does not:
+`DriveUploadDispatch.upload_with_retry` does not:
 
 - inspect cached state itself before entering the request path
 - flush memory buffers itself
@@ -201,8 +203,8 @@ to `queue_upload`.
 
 ## Source Pointers
 
-- `src/drive.ml`: `upload_with_retry`
+- `src/driveUploadDispatch.ml`: `upload_with_retry`
 - `src/drive.ml`: `get_path_in_cache`
 - `src/drive.ml`: `get_resource`
-- `src/drive.ml`: `queue_upload`
+- `src/driveUploadDispatch.ml`: `queue_upload`
 - `src/drive.ml`: `upload_if_dirty`

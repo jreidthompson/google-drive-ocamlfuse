@@ -5,6 +5,9 @@
 `Drive.truncate` is the top-level local-size-mutation path used by the FUSE
 `truncate` callback.
 
+The public `Drive` entrypoint builds runtime state and delegates the mutation
+logic to `DriveFileMutations.truncate`.
+
 Like `Drive.write`, it is a local mutation step, not an immediate remote API
 call. Its job is to:
 
@@ -90,7 +93,8 @@ it touches file length.
 
 ## Ensure Local Content Exists
 
-After flushing write buffers, `truncate` runs:
+After flushing write buffers, the production truncate path ensures local
+content through:
 
 ```ocaml
 with_retry download_resource resource
@@ -187,7 +191,7 @@ operation itself.
 
 ## Defensive Missing-File Branch
 
-Even after `download_resource`, the implementation still checks:
+Even after `download_resource`, the implementation checks:
 
 ```ocaml
 if Sys.file_exists content_path then
@@ -216,9 +220,9 @@ a defensive fallback for races or unexpected local cache deletion.
 So a successful truncate only guarantees:
 
 - local cache state changed or was at least attempted
-- cached metadata now says `state = ToUpload`
+- cached metadata says `state = ToUpload`
 
-The later upload trigger still comes from the close/sync path, just like for
+The later upload trigger comes from the close/sync path, just like for
 ordinary writes.
 
 ## Relationship To `Drive.write`
@@ -265,7 +269,7 @@ currently relies on.
 ### Dirty Buffered Writes Must Reach Disk First
 
 The `flush_memory_buffers` call is essential. Removing or bypassing it would
-risk truncating a stale on-disk file while newer local bytes still live only in
+risk truncating a stale on-disk file while newer local bytes live only in
 memory buffers.
 
 ### Metadata Is Optimistically Updated
@@ -277,4 +281,10 @@ requested size/state.
 ### This Path Handles Both Shrink And Extend
 
 Do not read the function as "only shrink". Passing a larger `size` extends the
-local file and still routes through the normal upload lifecycle afterwards.
+local file and routes through the normal upload lifecycle afterwards.
+
+## Source Pointers
+
+- `src/drive.ml`: `truncate`
+- `src/driveFileMutations.ml`: `truncate`
+- `src/drive.ml`: `download_resource`
