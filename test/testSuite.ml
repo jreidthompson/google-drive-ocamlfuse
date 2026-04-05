@@ -8,6 +8,8 @@ let _ =
            TestConfigStore.suite;
            TestGdfuseCli.suite;
            TestGdfuseFlow.suite;
+           TestDriveUploadDispatch.suite;
+           TestDriveFileMutations.suite;
            TestDriveMutations.suite;
            TestDriveViews.suite;
            TestDriveDirectoryReads.suite;

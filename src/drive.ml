@@ -1951,70 +1951,47 @@ let read path buf offset file_descr =
 
 (* END read *)
 
+module DriveFileMutationPorts = struct
+  let get_path_in_cache = get_path_in_cache
+  let get_resource = get_resource
+  let ensure_local_content resource = with_retry download_resource resource
+  let flush_memory_buffers = flush_memory_buffers
+
+  let write_to_memory_buffers resource content_path buf offset =
+    let memory_buffers = (Context.get_ctx ()).Context.memory_buffers in
+    Buffering.MemoryBuffers.write_to_block
+      (resource.CacheData.Resource.remote_id |> Option.get)
+      content_path buf offset memory_buffers
+
+  let write_to_file content_path buf offset =
+    Utils.with_out_channel content_path (fun ch ->
+        let file_descr = Unix.descr_of_out_channel ch in
+        Unix.LargeFile.lseek file_descr offset Unix.SEEK_SET |> ignore;
+        Fuse.Unix_util.write file_descr buf)
+
+  let truncate_local_file = Unix.LargeFile.truncate
+  let file_exists = Sys.file_exists
+  let update_cached_resource = update_cached_resource
+  let update_cached_resource_state = update_cached_resource_state
+  let shrink_cache ?file_size () = shrink_cache ?file_size ()
+end
+
+module FileMutationOps = DriveFileMutations.Make (DriveFileMutationPorts)
+
+let drive_file_mutation_runtime () =
+  let context = Context.get_ctx () in
+  {
+    DriveFileMutations.cache = context.Context.cache;
+    config = context |. Context.config_lens;
+  }
+
 (* write *)
 let write path buf offset file_descr =
-  let context = Context.get_ctx () in
-  let config = context |. Context.config_lens in
-  let path_in_cache, trashed = get_path_in_cache path config in
-
-  let write_to_resource =
-    get_resource path_in_cache trashed >>= fun resource ->
-    with_retry download_resource resource >>= fun content_path ->
-    Utils.log_with_header "BEGIN: Writing local file (path=%s, trashed=%b)\n%!"
-      path_in_cache trashed;
-    let write_to_memory_buffers () =
-      let memory_buffers = context.Context.memory_buffers in
-      Buffering.MemoryBuffers.write_to_block
-        (resource.CacheData.Resource.remote_id |> Option.get)
-        content_path buf offset memory_buffers
-    in
-    let write_to_file () =
-      Utils.with_out_channel content_path (fun ch ->
-          let file_descr = Unix.descr_of_out_channel ch in
-          Unix.LargeFile.lseek file_descr offset Unix.SEEK_SET |> ignore;
-          Fuse.Unix_util.write file_descr buf)
-    in
-    let bytes =
-      if config.Config.write_buffers then write_to_memory_buffers ()
-      else write_to_file ()
-    in
-    Utils.log_with_header
-      "END: Writing local file (path=%s, trashed=%b, bytes=%d)\n%!"
-      path_in_cache trashed bytes;
-    let top_offset = Int64.add offset (Int64.of_int bytes) in
-    let file_size = Option.default 0L resource.CacheData.Resource.size in
-    let cache = context.Context.cache in
-    if top_offset > file_size then (
-      let updated_resource =
-        resource
-        |> CacheData.Resource.size ^= Some top_offset
-        |> CacheData.Resource.state ^= CacheData.Resource.State.ToUpload
-      in
-      update_cached_resource cache updated_resource;
-      let file_size = Int64.sub top_offset file_size in
-      shrink_cache ~file_size ())
-    else
-      update_cached_resource_state cache CacheData.Resource.State.ToUpload
-        resource.CacheData.Resource.id;
-    SessionM.return bytes
-  in
-  do_request write_to_resource |> fst
+  do_request
+    (FileMutationOps.write (drive_file_mutation_runtime ()) path buf offset)
+  |> fst
 
 (* END write *)
-
-let start_uploading_if_dirty path =
-  let config = Context.get_ctx () |. Context.config_lens in
-  let path_in_cache, trashed = get_path_in_cache path config in
-  let resource = lookup_resource path_in_cache trashed in
-  match resource with
-  | None -> false
-  | Some r ->
-      if r.CacheData.Resource.state == CacheData.Resource.State.ToUpload then (
-        let cache = Context.get_cache () in
-        update_cached_resource_state cache CacheData.Resource.State.Uploading
-          r.CacheData.Resource.id;
-        true)
-      else false
 
 let upload resource =
   let context = Context.get_ctx () in
@@ -2108,24 +2085,31 @@ let init_filesystem () =
     BackgroundFolderFetching.start_folder_fetching_thread cache (fun path ->
         read_dir path |> ignore)
 
-let queue_upload resource =
-  let context = Context.get_ctx () in
-  let config = context |. Context.config_lens in
-  if config.Config.async_upload_queue then (
-    let cache = context.Context.cache in
-    flush_memory_buffers resource;
-    UploadQueue.queue_resource cache config resource;
-    SessionM.return ())
-  else upload_resource_with_retry resource
+module DriveUploadDispatchPorts = struct
+  let get_path_in_cache = get_path_in_cache
+  let lookup_resource _cache path trashed = lookup_resource path trashed
+  let update_cached_resource_state = update_cached_resource_state
+  let get_resource = get_resource
+  let flush_memory_buffers = flush_memory_buffers
+  let enqueue_async_upload = UploadQueue.queue_resource
+  let upload_now_with_retry = upload_resource_with_retry
+end
 
-let upload_with_retry path =
-  let config = Context.get_ctx () |. Context.config_lens in
-  let path_in_cache, trashed = get_path_in_cache path config in
-  get_resource path_in_cache trashed >>= fun resource -> queue_upload resource
+module UploadDispatchOps = DriveUploadDispatch.Make (DriveUploadDispatchPorts)
+
+let drive_upload_dispatch_runtime () =
+  let context = Context.get_ctx () in
+  {
+    DriveUploadDispatch.cache = context.Context.cache;
+    config = context |. Context.config_lens;
+  }
 
 let upload_if_dirty path =
-  if start_uploading_if_dirty path then
-    do_request (upload_with_retry path) |> ignore
+  match
+    UploadDispatchOps.upload_if_dirty (drive_upload_dispatch_runtime ()) path
+  with
+  | None -> ()
+  | Some upload_request -> do_request upload_request |> ignore
 
 (* flush *)
 let flush path file_descr = upload_if_dirty path
@@ -2208,7 +2192,7 @@ module DriveMutationPorts = struct
         update_cache_size file_size metadata cache);
     update_cached_resource_state cache CacheData.Resource.State.ToUpload
       target.CacheData.Resource.id;
-    queue_upload target >>= fun () -> SessionM.return ()
+    UploadDispatchOps.queue_upload (drive_upload_dispatch_runtime ()) target
 
   let check_if_empty_remote remote_id is_folder trashed =
     let config = Context.get_ctx () |. Context.config_lens in
@@ -2300,36 +2284,9 @@ let rename path new_path =
 
 (* truncate *)
 let truncate path size =
-  let context = Context.get_ctx () in
-  let config = context |. Context.config_lens in
-  let path_in_cache, trashed = get_path_in_cache path config in
-  let truncate_resource =
-    get_resource path_in_cache trashed >>= fun resource ->
-    flush_memory_buffers resource;
-    with_retry download_resource resource >>= fun content_path ->
-    let remote_id = resource |. CacheData.Resource.remote_id |> Option.get in
-    Utils.log_with_header "BEGIN: Truncating file (remote id=%s)\n%!" remote_id;
-    let cache = context.Context.cache in
-    let updated_resource =
-      resource
-      |> CacheData.Resource.size ^= Some size
-      |> CacheData.Resource.state ^= CacheData.Resource.State.ToUpload
-    in
-    update_cached_resource cache updated_resource;
-    let file_size =
-      Int64.sub size (Option.default 0L resource.CacheData.Resource.size)
-    in
-    shrink_cache ~file_size ();
-    if Sys.file_exists content_path then
-      Unix.LargeFile.truncate content_path size
-    else
-      Utils.log_with_header
-        "Warning: file %s does not exists (remote id=%s)\n%!" content_path
-        remote_id;
-    Utils.log_with_header "END: Truncating file (remote id=%s)\n%!" remote_id;
-    SessionM.return ()
-  in
-  do_request truncate_resource |> ignore
+  do_request
+    (FileMutationOps.truncate (drive_file_mutation_runtime ()) path size)
+  |> ignore
 
 (* END truncate *)
 
