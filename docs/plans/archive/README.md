@@ -14,3 +14,6 @@
 - `drive-read-path-extraction/plan.md`: archived completed plan for extracting
   `DriveViews` and `DriveDirectoryReads` and making the read-side view and
   directory-listing paths unit testable.
+- `drive-write-path-extraction/plan.md`: archived completed plan for
+  extracting `DriveFileMutations` and `DriveUploadDispatch` and making the
+  write-side file-mutation and upload-dispatch paths unit testable.
