@@ -84,7 +84,7 @@ After=network.target
 ExecStart=google-drive-ocamlfuse -label {label} {mountpoint}
 ExecStop=fusermount -u {mountpoint}
 Restart=always
-Type=forking
+Type=exec
 
 [Install]
 WantedBy=default.target
@@ -121,7 +121,7 @@ Group={username}
 ExecStart=google-drive-ocamlfuse -label {label} {mountpoint}
 ExecStop=fusermount -u {mountpoint}
 Restart=always
-Type=forking
+Type=exec
 
 [Install]
 WantedBy=multi-user.target
@@ -153,7 +153,7 @@ Create a shell script `gdfuse` in `/usr/local/bin/` (as root) with the following
 
     #!/bin/bash
     
-    google-drive-ocamlfuse -label $1 $* &
+    google-drive-ocamlfuse -label $* 2>&1 >/dev/null &
 
 And make it executable:
 
