@@ -25,7 +25,6 @@ let file_info ?(file_handle = 0L) ?(flags = []) () =
     fi_nonseekable = false;
     fi_flock_release = false;
     fi_cache_readdir = false;
-    fi_noflush = false;
     fi_lock_owner = 0L;
     fi_poll_events = 0l;
   }
