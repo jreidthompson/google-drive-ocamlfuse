@@ -66,4 +66,9 @@ end
 
 module Make (P : PORTS) : sig
   val get_metadata : runtime -> CacheData.Metadata.t
+
+  (* Returns the in-memory cached metadata without refreshing over the network
+     or taking the metadata lock. Used by statfs so it can never block (which
+     would hang df/ls and prevent system suspend — issue #896). *)
+  val get_cached_metadata : unit -> CacheData.Metadata.t option
 end

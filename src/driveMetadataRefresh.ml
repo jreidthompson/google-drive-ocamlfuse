@@ -315,6 +315,15 @@ module Make (P : PORTS) = struct
         Utils.log_with_header "BEGIN: Getting metadata from context\n%!";
         Some metadata
 
+  (* Non-blocking metadata accessor: returns the in-memory cached metadata (if
+     any) WITHOUT ever refreshing over the network or taking the metadata lock.
+     statfs must use this. A FUSE handler that blocks — on the network, or on
+     the metadata lock while a concurrent refresh holds it — keeps the *calling*
+     process in uninterruptible D state inside fuse_statfs/request_wait_answer.
+     That hangs df / ls / file choosers / some PAM stacks, and prevents the
+     kernel freezer from suspending the system. See issue #896. *)
+  let get_cached_metadata () = P.get_context_metadata ()
+
   let get_metadata runtime =
     P.with_metadata_lock (fun () ->
         match load_metadata runtime with

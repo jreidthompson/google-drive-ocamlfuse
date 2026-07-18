@@ -525,8 +525,32 @@ let drive_filesystem_stats_runtime metadata =
   let context = Context.get_ctx () in
   { DriveFilesystemStats.metadata; config = context |. Context.config_lens }
 
+(* Default metadata for statfs when no cached metadata is available yet (e.g.
+   right after mount, before the first refresh). storage_quota_limit = 0 makes
+   DriveFilesystemStats report unlimited space. *)
+let default_filesystem_stats_metadata =
+  {
+    CacheData.Metadata.display_name = "";
+    storage_quota_limit = 0L;
+    storage_quota_usage = 0L;
+    start_page_token = "";
+    cache_size = 0L;
+    last_update = 0.0;
+    clean_shutdown = false;
+  }
+
 let statfs () =
-  let metadata = get_metadata () in
+  (* Read ONLY the cached metadata; never trigger a network metadata refresh
+     here. statfs is invoked implicitly by df, GTK file choosers, GNOME's
+     disk-usage poll, some PAM stacks, etc. If it blocked on the network (or on
+     the metadata lock during a concurrent refresh) the calling process would
+     hang in uninterruptible D state, hanging those callers and breaking system
+     suspend (the freezer cannot freeze a D-state task). See issue #896. *)
+  let metadata =
+    match MetadataRefreshOps.get_cached_metadata () with
+    | Some metadata -> metadata
+    | None -> default_filesystem_stats_metadata
+  in
   DriveFilesystemStats.statfs (drive_filesystem_stats_runtime metadata)
 
 (* END Metadata *)
