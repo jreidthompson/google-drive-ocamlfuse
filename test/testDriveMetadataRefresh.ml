@@ -262,6 +262,20 @@ module MetadataRefresh = Refresh.Make (FakePorts)
 let get_metadata ?(runtime = default_runtime ()) () =
   MetadataRefresh.get_metadata runtime
 
+let test_cached_metadata_returns_without_refreshing () =
+  FakePorts.reset ();
+  let metadata = make_metadata () in
+  FakePorts.context_metadata := Some metadata;
+  FakePorts.metadata_valid := false;
+  assert_equal (Some metadata) (MetadataRefresh.get_cached_metadata ());
+  assert_equal [ "get_context" ] !FakePorts.trace
+
+let test_missing_cached_metadata_does_not_load_db_or_refresh () =
+  FakePorts.reset ();
+  FakePorts.db_metadata := Some (make_metadata ());
+  assert_equal None (MetadataRefresh.get_cached_metadata ());
+  assert_equal [ "get_context" ] !FakePorts.trace
+
 let test_valid_context_metadata_returns_immediately () =
   FakePorts.reset ();
   let metadata = make_metadata () in
@@ -411,6 +425,10 @@ let test_request_exception_propagates () =
 let suite =
   "DriveMetadataRefresh"
   >::: [
+         "cached metadata returns without refreshing"
+         >:: test_cached_metadata_returns_without_refreshing;
+         "missing cached metadata does not load db or refresh"
+         >:: test_missing_cached_metadata_does_not_load_db_or_refresh;
          "valid context metadata returns immediately"
          >:: test_valid_context_metadata_returns_immediately;
          "db metadata is resynced and stored in context"
