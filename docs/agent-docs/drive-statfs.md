@@ -8,7 +8,8 @@ collects the current metadata/config runtime and delegates quota math and
 
 It does not inspect an individual file or directory path. Instead, it reports a
 synthetic `statvfs` view for the whole mounted filesystem based on the global
-metadata snapshot returned by `Drive.get_metadata`.
+in-memory metadata snapshot. It does not refresh that snapshot before reporting
+capacity.
 
 So this function is best understood as a quota-reporting adapter, not as a
 path-sensitive lookup.
@@ -41,9 +42,17 @@ The public wrapper is:
 
 ```ocaml
 let statfs () =
-  let metadata = get_metadata () in
+  let metadata =
+    match MetadataRefreshOps.get_cached_metadata () with
+    | Some metadata -> metadata
+    | None -> default_filesystem_stats_metadata
+  in
   DriveFilesystemStats.statfs (drive_filesystem_stats_runtime metadata)
 ```
+
+`default_filesystem_stats_metadata` has both quota fields set to zero. The zero
+limit selects the existing unlimited-capacity policy until an in-memory metadata
+snapshot is available.
 
 `drive_filesystem_stats_runtime` reads the current config from `Context` and
 passes it together with the metadata snapshot:
@@ -59,14 +68,15 @@ The pure implementation in `DriveFilesystemStats` then performs the existing
 quota and block conversion:
 
 ```ocaml
+let quota_limit runtime =
+  if
+    runtime.metadata.CacheData.Metadata.storage_quota_limit = 0L
+    || runtime.config.Config.team_drive_id <> ""
+  then unlimited_quota_limit
+  else runtime.metadata.CacheData.Metadata.storage_quota_limit
+
 let statfs runtime =
-  let limit =
-    if
-      runtime.metadata.CacheData.Metadata.storage_quota_limit = 0L
-      || runtime.config.Config.team_drive_id <> ""
-    then Int64.max_int
-    else runtime.metadata.CacheData.Metadata.storage_quota_limit
-  in
+  let limit = quota_limit runtime in
   let f_blocks = Int64.div limit f_bsize in
   let free_bytes =
     Int64.sub limit runtime.metadata.CacheData.Metadata.storage_quota_usage
@@ -79,7 +89,8 @@ let statfs runtime =
     f_bavail = f_bfree;
     f_files = f_blocks;
     f_ffree = f_bfree;
-    f_namemax = 256L;
+    f_namemax;
+    (* ignored *)
     f_frsize = 0L;
     f_favail = 0L;
     f_fsid = 0L;
@@ -89,27 +100,43 @@ let statfs runtime =
 
 That is the whole reporting control flow.
 
-## Metadata Dependency
+## Cached Metadata Dependency
 
-The first line in the public wrapper is:
+`Drive.statfs` reads metadata through:
 
 ```ocaml
-let metadata = get_metadata ()
+MetadataRefreshOps.get_cached_metadata ()
 ```
 
-So `Drive.statfs` inherits all of `Drive.get_metadata`'s freshness behavior
-before it calls `DriveFilesystemStats`.
+The refresh module implements that accessor as a direct read of its context
+port:
 
-That means a `statfs` call can:
+```ocaml
+let get_cached_metadata () = P.get_context_metadata ()
+```
 
-- use cached metadata if it is still valid
-- trigger a metadata refresh
-- trigger Drive change-feed reconciliation indirectly
+Unlike `Drive.get_metadata`, this path does not:
 
-even though the visible result looks like a simple filesystem-capacity query.
+- take `Context.metadata_lock`
+- check `Config.metadata_cache_time`
+- load metadata from SQLite
+- make a Drive API request
+- run change-feed reconciliation
 
-See `docs/agent-docs/drive-get-metadata.md` for the full refresh logic behind
-that dependency.
+The production context read still uses the global `Context` lock. That lock is
+distinct from `Context.metadata_lock`, which covers the complete metadata
+refresh. A refresh does not hold the global `Context` lock while waiting for
+Drive, so `statfs` does not wait for the refresh lock or its network work.
+
+If cached metadata exists, `statfs` uses it even when it is older than
+`Config.metadata_cache_time`. If it does not exist yet, `statfs` uses the
+zero-limit default and reports effectively unlimited space.
+
+Metadata refresh remains demand-driven by normal resource operations that call
+`Drive.get_metadata`. Consequently, quota can remain stale for longer than
+`Config.metadata_cache_time` when no such operation occurs.
+
+See `docs/agent-docs/drive-get-metadata.md` for the separate refreshing path.
 
 ## Where The Quota Numbers Come From
 
@@ -118,7 +145,7 @@ The quota fields come from `CacheData.Metadata.t`:
 - `storage_quota_limit`
 - `storage_quota_usage`
 
-Those are populated by `get_metadata` from:
+The refreshing metadata path populates those fields from:
 
 ```ocaml
 AboutResource.get
@@ -140,10 +167,11 @@ then Int64.max_int
 else metadata.storage_quota_limit
 ```
 
-So `statfs` reports an effectively unbounded filesystem in two situations:
+So `statfs` reports an effectively unbounded filesystem in three situations:
 
 - Drive returned a quota limit of `0`
 - the mount is operating in team-drive mode
+- the in-memory metadata snapshot is not available yet
 
 This is not a real capacity probe. It is a deliberate fallback policy to avoid
 reporting a small or meaningless quota in those modes.
@@ -204,6 +232,8 @@ that the repository cares about and leaves the rest as placeholders.
 - per-resource lookup
 - local cache size
 - `Config.max_cache_size_mb`
+- metadata freshness checks
+- the metadata row stored in SQLite
 
 This last point is easy to misunderstand because `cache_size` exists in
 metadata and the repository also manages a local cache directory limit.
@@ -229,9 +259,12 @@ resource-driven.
 - inspect any specific mounted path
 - count actual Drive files
 - account for the local cache size limit in its free-space result
+- refresh account quota from Drive
+- reconcile the Drive change feed
+- take the metadata refresh lock
 
-They only convert the current Drive quota snapshot into a synthetic `statvfs`
-record.
+It only converts the current in-memory Drive quota snapshot, or the unlimited
+fallback, into a synthetic `statvfs` record.
 
 ## Related Docs
 
@@ -242,7 +275,8 @@ record.
 
 - `src/driveFilesystemStats.ml`: quota/block policy and `statvfs` construction
 - `src/drive.ml`: thin `statfs` wrapper
-- `src/driveMetadataRefresh.ml`: `get_metadata` policy
-- `src/drive.ml`: thin `get_metadata` wrapper
+- `src/driveMetadataRefresh.ml`: refreshing and cached metadata accessors
 - `src/cacheData.ml`: `CacheData.Metadata`
 - `bin/gdfuseFuse.ml`: `statfs`
+- `test/testDriveMetadataRefresh.ml`: cached-accessor contract tests
+- `test/testDriveFilesystemStats.ml`: quota and block-math tests

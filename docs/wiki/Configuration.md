@@ -35,10 +35,17 @@ max_cache_size_mb = 512
 
 ### Content
 
-Specifies the interval in seconds between queries to detect server-side changes:
+Specifies the metadata cache lifetime in seconds. After it expires, the next
+normal resource operation that requests metadata checks for server-side changes:
 
     [mount]
     metadata_cache_time=60
+
+This interval is checked when normal resource operations request metadata.
+Filesystem-capacity queries such as `df` use the latest in-memory quota snapshot
+without refreshing it from Drive. The reported quota can therefore remain stale
+until a resource operation refreshes metadata. Before the first in-memory
+snapshot is available, capacity is reported as unlimited.
 
 Specifies if the filesystem is to be mounted read-only:
 

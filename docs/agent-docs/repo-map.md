@@ -210,7 +210,8 @@ The `Makefile` is only a small wrapper around these dune commands.
     without real `Context`, cache files, OAuth, or Drive API requests.
 
 - `src/driveMetadataRefresh.ml`
-  - Metadata freshness and Drive change-feed replay core for `get_metadata`.
+  - Metadata freshness and Drive change-feed replay core for `get_metadata`,
+    plus the in-memory-only accessor used by `statfs`.
   - Owns Context/DB metadata selection policy, cache-size resync, metadata
     validity checks, account metadata refresh, start-page-token handling,
     no-change/over-limit/incremental replay branches, and synthetic view

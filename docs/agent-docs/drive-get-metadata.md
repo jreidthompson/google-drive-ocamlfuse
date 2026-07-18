@@ -11,14 +11,15 @@ It does not just return account metadata. It also decides whether the cached
 resource graph can still be trusted, and if not, reconciles it against the
 Drive changes feed.
 
-Many other operations depend on it indirectly:
+The module serves several operations through two access patterns:
 
-- `Drive.get_resource` uses it before path lookup
+- `Drive.get_resource` uses refreshing metadata before path lookup
 - `Drive.read_dir` depends on the resulting resource freshness state
-- `Drive.statfs` reads quota information from it before delegating reporting
-  math to `DriveFilesystemStats`
+- `Drive.statfs` uses the separate non-refreshing `get_cached_metadata` accessor
+  for quota reporting
 
-So this function is one of the main places where cache coherence is enforced.
+So `get_metadata` is one of the main places where cache coherence is enforced,
+while `get_cached_metadata` is an observation-only path.
 
 ## What Metadata Means Here
 
@@ -68,6 +69,26 @@ The lock matters because metadata refresh mutates both:
 
 - the global metadata snapshot
 - the cached resource graph that other operations consult
+
+## Non-Refreshing Cached Access
+
+The module also exposes:
+
+```ocaml
+val get_cached_metadata : unit -> CacheData.Metadata.t option
+```
+
+This accessor reads only the in-memory metadata snapshot. It does not take the
+metadata refresh lock, check freshness, load from SQLite, or contact Drive.
+
+`Drive.statfs` uses this accessor so filesystem-capacity queries do not wait for
+a metadata refresh or its retrying network requests. A stale snapshot is
+returned unchanged. Before the first snapshot is loaded, it returns `None` and
+`Drive.statfs` reports the existing unlimited-capacity fallback.
+
+This accessor does not enforce cache coherence. Normal resource operations use
+`get_metadata`, which remains responsible for refreshing metadata and replaying
+Drive changes.
 
 ## Locking And Storage Layers
 
@@ -340,11 +361,13 @@ So `get_resource` can treat `metadata.last_update` as a meaningful global fence.
 
 ## Interaction With `statfs`
 
-`Drive.statfs` reads quota information from `get_metadata` and passes it to
+`Drive.statfs` does not call `get_metadata`. It reads the current in-memory
+snapshot through `get_cached_metadata` and passes that snapshot to
 `DriveFilesystemStats`.
 
-That means a `statfs` call can also trigger a metadata refresh and change-feed
-reconciliation, even though it looks like a quota-only query from the outside.
+As a result, a `statfs` call does not trigger metadata refresh or change-feed
+reconciliation. Normal resource operations remain responsible for advancing the
+snapshot that later capacity queries observe.
 
 See `docs/agent-docs/drive-statfs.md` for the reporting-side logic that turns
 those metadata fields and the current config into a synthetic `statvfs` record.
@@ -362,6 +385,8 @@ invariants:
 - DB-loaded `cache_size` is intentionally recomputed before reuse
 - first-time metadata initialization is not the same as replaying an incremental
   diff
+- `get_cached_metadata` must remain free of freshness checks, DB access, metadata
+  refresh locking, and network requests
 
 ## Related Docs
 
@@ -370,10 +395,9 @@ invariants:
 
 ## Source Pointers
 
-- `src/driveMetadataRefresh.ml`: metadata freshness and change-feed replay
-  policy
+- `src/driveMetadataRefresh.ml`: refreshing and cached metadata access policies
 - `src/drive.ml`: `DriveMetadataRefreshPorts`
-- `src/drive.ml`: thin `get_metadata` wrapper
+- `src/drive.ml`: `get_metadata` and `statfs` wrappers
 - `src/driveResourceMapping.ml`: resource construction and filename mapping
 - `src/cacheData.ml`: `CacheData.Metadata`
 - `src/cacheData.ml`: `CacheData.Metadata.is_valid`

@@ -178,10 +178,13 @@ If something still doesn't work, try starting from scratch removing everything
 in `~/.gdfuse/default`. In this case you will need to reauthorize the
 application.
 
-Note that in order to reduce latency, the application will query the server
-and check for changes only every 60 seconds (configurable). So, if you make a
-change to your documents (server side), you won't see it immediately in the
-mounted filesystem.
+Note that in order to reduce latency, cached metadata remains valid for 60
+seconds by default (configurable). After it expires, the next normal resource
+operation checks the server for changes. So, if you make a change to your
+documents (server side), you won't see it immediately in the mounted filesystem.
+Filesystem-capacity queries such as `df` use the latest in-memory quota snapshot
+without contacting Drive; they may report stale values, or unlimited capacity
+before the first snapshot is available.
 
 Note also that Google Documents will be exported read-only.
 

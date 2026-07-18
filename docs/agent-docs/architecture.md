@@ -281,8 +281,9 @@ The directory-side `releasedir` / `fsyncdir` callbacks remain adapter-level
 no-ops in `bin/gdfuseFuse.ml`; see
 `docs/agent-docs/gdfuse-noop-dir-callbacks.md`.
 
-Filesystem-wide capacity reporting enters through `Drive.statfs` and delegates
-the quota math to `DriveFilesystemStats`; see `docs/agent-docs/drive-statfs.md`.
+Filesystem-wide capacity reporting enters through `Drive.statfs`, reads only the
+current in-memory metadata snapshot, and delegates quota math to
+`DriveFilesystemStats`; see `docs/agent-docs/drive-statfs.md`.
 
 Metadata-only `utime` / `chmod` / `chown` requests enter through thin wrappers
 over `DriveMetadataMutations`. The native FUSE `utimens` callback is converted
