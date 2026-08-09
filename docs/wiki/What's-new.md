@@ -1,3 +1,10 @@
+0.9.1
+=====
+Google Docs can now be exported as Markdown by setting
+`document_format="md"` (or `"markdown"`). Combined with `editable_docs=true`,
+edits to the exported Markdown are converted back to the native Google Docs
+format on upload.
+
 0.9.0
 =====
 This version moves the filesystem to FUSE 3. Source builds now require

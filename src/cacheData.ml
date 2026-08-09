@@ -412,6 +412,7 @@ module Resource = struct
     | "htm" | "html" -> "text/html"
     | "jpg" | "jpeg" -> "image/jpeg"
     | "json" -> "application/vnd.google-apps.script+json"
+    | "md" | "markdown" -> "text/markdown"
     | "ods" -> "application/x-vnd.oasis.opendocument.spreadsheet"
     | "odt" -> "application/vnd.oasis.opendocument.text"
     | "odp" -> "application/vnd.oasis.opendocument.presentation"

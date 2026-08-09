@@ -3,6 +3,7 @@
 * `docx` or `doc`: Microsoft Word
 * `epub`: Electronic Publication
 * `html` or `htm`: HTML Format
+* `md` or `markdown`: Markdown
 * `odt`: Open Document Format
 * `pdf`: Portable Document Format
 * `rtf`: Rich Text Format
