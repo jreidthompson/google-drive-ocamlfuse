@@ -221,6 +221,24 @@ let test_editable_document_uses_configured_format_without_preliminary_media () =
       let media = Option.get media_source in
       assert_equal expected_content_type media.GapiMediaResource.content_type)
 
+let test_editable_markdown_document_uploads_with_markdown_content_type () =
+  with_reset (fun () ->
+      let document_mime_type = "application/vnd.google-apps.document" in
+      let config =
+        {
+          Config.default with
+          editable_docs = true;
+          document_format = "md";
+          autodetect_mime = false;
+        }
+      in
+      let resource = make_resource ~mime_type:document_mime_type "/doc" in
+      FakePorts.set_media_lengths [ 42L ];
+      upload ~config resource;
+      let _file_id, media_source, _patch = last_remote_update () in
+      let media = Option.get media_source in
+      assert_equal "text/markdown" media.GapiMediaResource.content_type)
+
 let test_autodetect_mime_uses_empty_content_type () =
   with_reset (fun () ->
       let config = { Config.default with autodetect_mime = true } in
@@ -346,6 +364,8 @@ let suite =
   >::: [
          "test_editable_document_uses_configured_format_without_preliminary_media"
          >:: test_editable_document_uses_configured_format_without_preliminary_media;
+         "test_editable_markdown_document_uploads_with_markdown_content_type"
+         >:: test_editable_markdown_document_uploads_with_markdown_content_type;
          "test_autodetect_mime_uses_empty_content_type"
          >:: test_autodetect_mime_uses_empty_content_type;
          "test_cached_mime_preferred_when_autodetect_disabled"

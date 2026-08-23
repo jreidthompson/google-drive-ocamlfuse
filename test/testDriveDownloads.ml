@@ -332,6 +332,16 @@ let test_exportable_document_falls_back_to_export_call () =
           odt_mime_type)
        !FakePorts.trace)
 
+let test_markdown_document_exports_with_markdown_mime_type () =
+  FakePorts.reset ();
+  let config = document_config ~document_format:"md" () in
+  let resource = make_resource ~mime_type:document_mime_type "/doc" in
+  FakePorts.set_select [ Some resource ];
+  assert_equal content_path (download ~config resource);
+  assert_bool "expected markdown document export"
+    (List.mem "export_document:/cache/rid-file:rid-file:text/markdown"
+       !FakePorts.trace)
+
 let test_zero_byte_file_creates_empty_file () =
   FakePorts.reset ();
   let resource = make_resource ~size:0L "/empty.txt" in
@@ -402,6 +412,8 @@ let suite =
          >:: test_exportable_document_uses_cached_export_link;
          "test_exportable_document_falls_back_to_export_call"
          >:: test_exportable_document_falls_back_to_export_call;
+         "test_markdown_document_exports_with_markdown_mime_type"
+         >:: test_markdown_document_exports_with_markdown_mime_type;
          "test_zero_byte_file_creates_empty_file"
          >:: test_zero_byte_file_creates_empty_file;
          "test_media_failure_restores_to_download_before_handling_exception"

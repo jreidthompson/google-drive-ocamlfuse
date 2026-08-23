@@ -2,7 +2,7 @@ open GapiUtils.Infix
 open GapiLens.Infix
 
 let application_name = "google-drive-ocamlfuse"
-let version = "0.9.1"
+let version = "0.9.2"
 
 type t = {
   (* Number of seconds metadata should be cached. *)
@@ -149,7 +149,8 @@ type t = {
    * .desktop files is being removed from Nautilus. *)
   desktop_entry_as_html : bool;
   (* Allow writing to exported Google Docs (e.g. HTML) and uploading changes
-   * back to Drive. Requires a convertible document_format such as html or docx. *)
+   * back to Drive. Requires a convertible document_format such as html, md,
+   * or docx. *)
   editable_docs : bool;
   (* Async upload queue maximum number of entries (files) before blocking.
    * 0 means unlimited. *)

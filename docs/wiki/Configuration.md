@@ -79,6 +79,10 @@ formatting and metadata from the original Google document may be lost. It is
 safer to copy the file outside of the mounted drive, edit it there, and then
 copy it back, overwriting the original.
 
+For text documents, `document_format="md"` (Markdown) works well with
+`editable_docs`, because Markdown survives the Drive export/import round trip
+with less formatting noise than richer formats.
+
 Text document [[export format|Exportable-formats#valid-download-formats-for-text-documents]]:
 
     [docs]
