@@ -1,4 +1,4 @@
-0.9.1
+0.9.2
 =====
 Google Docs can now be exported as Markdown by setting
 `document_format="md"` (or `"markdown"`). Combined with `editable_docs=true`,
